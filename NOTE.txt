@@ -1,0 +1,9 @@
+
+
+slog.Debug => 一般白顏色
+
+slog.Info => 亮色白
+
+slog.Warn => 黃色
+
+slog.Error => 亮紅
