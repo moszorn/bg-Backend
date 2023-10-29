@@ -12,7 +12,7 @@ import (
 var "未完成"
 
 
-
+/*
 type (
 	chanRepCode uint8
 	chanResult  struct {
@@ -22,7 +22,7 @@ type (
 		isGameStart bool
 		Err         error
 	}
-)
+)*/
 
 const (
 	code0 chanRepCode = iota
@@ -54,9 +54,9 @@ func CreateCBGame(tableName string, tableId int32) *Game {
 	p := newSeatManager()
 
 	cbGame := &Game{
-		gateway:      make(chan rchanr.ChanRepWithArguments[*RoomUser, *chanResult]),
-		findUser:     make(chan rchanr.ChanRepWithArguments[*skf.NSConn, *RoomUser]),
-		broadcastMsg: make(chan rchanr.ChanRepWithArguments[*skf.Message, []*RoomUser]),
+		//gateway:      make(chan rchanr.ChanRepWithArguments[*RoomUser, *chanResult]),
+		//findUser:     make(chan rchanr.ChanRepWithArguments[*skf.NSConn, *RoomUser]),
+		//broadcastMsg: make(chan rchanr.ChanRepWithArguments[*skf.Message, []*RoomUser]),
 		players:      p,
 		engine:       e,
 		Users:        make(map[*RoomUser]struct{}),
@@ -73,12 +73,11 @@ func CreateCBGame(tableName string, tableId int32) *Game {
 
 type Game struct { // 玩家進入房間, 玩家進入遊戲,玩家離開房間,玩家離開遊戲
 	// 未來 當遊戲桌關閉時,記得一同關閉channel 以免leaking
-	gateway      rchanr.ChanReqWithArguments[*RoomUser, *chanResult]
-	findUser     rchanr.ChanReqWithArguments[*skf.NSConn, *RoomUser]
-	broadcastMsg rchanr.ChanReqWithArguments[*skf.Message, []*RoomUser]
+	roomManager *RoomManager
+	//gateway      rchanr.ChanReqWithArguments[*RoomUser, *chanResult]
+	//findUser     rchanr.ChanReqWithArguments[*skf.NSConn, *RoomUser]
+	//broadcastMsg rchanr.ChanReqWithArguments[*skf.Message, []*RoomUser]
 
-	// 未來 當遊戲桌關閉時,記得一同關閉channel 以免leaking
-	checkUsers chan struct{}
 
 	players *SeatManager // // 遊戲座位環形,環形元素是RingItem(宣告在底下), 一場遊戲限四個人
 	engine  *Engine
@@ -110,35 +109,14 @@ func (g *Game) setSeatAndGetNextPlayer(seat uint8) uint8 { return 0 }
 
 func (g *Game) setEnginePlaySeat(current uint8, next uint8) {}
 
-// UserJoinChannel 進入遊戲房,回傳nil表示正常進入
-func (g *Game) UserJoinChannel(ns *skf.NSConn) *chanResult {
-	var (
-		user     *RoomUser
-		chanSeat *chanResult
-	)
-	if user = g.findUser.Probe(ns); user != nil {
-		chanSeat = new(chanResult)
-		chanSeat.Err = ErrUserInRoom
-		return chanSeat
-	}
-	user = NewUser(ns)
-	preTracking := user.Tracking
-	user.Tracking = EnterRoom
-
-	chanSeat = g.gateway.Probe(user)
-	if chanSeat == nil {
-		//入房成功
-		return chanSeat
-	}
-	if chanSeat.Err != nil {
-		//還原Tracking
-		user.Tracking = preTracking
-	}
-	return chanSeat
+// UserJoin 進入遊戲房,回傳nil表示正常進入
+func (g *Game) UserJoin(ns *skf.NSConn, userName string, userZone uint8) *chanResult {
+	return  g.roomManager.UserJoin(ns, userName, userZone)
 }
-
-// UserLeaveChannel 離開遊戲房
-func (g *Game) UserLeaveChannel(*skf.NSConn) *chanResult { return nil }
+// UserLeave 離開遊戲房
+func (g *Game) UserLeave( ns *skf.NSConn, userName string, userZone uint8) *chanResult {
+	return g.roomManager.UserLeave(ns, userName, userZone )
+}
 
 // PlayerJoinChannel 玩家入座
 func (g *Game) PlayerJoinChannel(*skf.NSConn) (status SeatStatusAndGameStart, seatAt uint8, nextBidder uint8, forbidden []uint8, err error) {

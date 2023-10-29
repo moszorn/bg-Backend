@@ -267,6 +267,7 @@ type (
 	RoomUser struct {
 		NsConn *skf.NSConn
 		Name   string
+		Zone   uint8 /*east south west north*/
 
 		//這個屬性要改成時間
 		TicketTime time.Time //  入房間的順序(門票)編號,進入房間必須累計1,開房間必須減去1
