@@ -257,6 +257,19 @@ const (
 	LeaveRoom               //離開房間 (前端觸動)
 	EnterGame               //進入遊戲(或從房間進入)
 	LeaveGame               //離開遊戲 (前端觸動)
+
+)
+
+type tableTopic int8
+
+const (
+	IsPlayerOnSeat   tableTopic = iota //查詢user已經存在遊戲桌中
+	IsGameStart                        // 查詢遊戲人數是否已滿四人(開始)
+	SeatShift                          //移動座位
+	PlayerAction                       //表示使用者出牌,需要與RoomManager Ring同步
+	_GetTablePlayers                   //請求撈出桌面正在遊戲的玩家 (底線打頭表示只限roomManager內部使用
+	_GetZoneUsers                      //請求撈出Zone中的觀眾使用者,也包含四家玩者
+	_FindPlayer                        //請求找尋指定玩家連線
 )
 
 /*
@@ -272,6 +285,9 @@ type (
 		//這個屬性要改成時間
 		TicketTime time.Time //  入房間的順序(門票)編號,進入房間必須累計1,開房間必須減去1
 		Tracking   Track
+
+		Bid  uint8 //所叫的叫品
+		Play uint8 //所出的牌
 	}
 
 	// SendInfo 表示要傳遞資訊到連線玩家,

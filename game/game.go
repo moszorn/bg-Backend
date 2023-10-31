@@ -11,24 +11,6 @@ import (
 
 var "未完成"
 
-
-/*
-type (
-	chanRepCode uint8
-	chanResult  struct {
-		// 尚為用到
-		code        chanRepCode
-		seat        *uint8
-		isGameStart bool
-		Err         error
-	}
-)*/
-
-const (
-	code0 chanRepCode = iota
-	code1
-)
-
 // 進入遊戲房間的連線
 func NewUser(conn *skf.NSConn) *RoomUser {
 	return &RoomUser{
@@ -38,26 +20,36 @@ func NewUser(conn *skf.NSConn) *RoomUser {
 	}
 }
 
+
+type PayloadType uint8
+
+const (
+	ByteType PayloadType = iota
+	ProtobufType
+)
+
 // payloadData 代表資料送到指定Client
 type payloadData struct {
-	Player    uint8
+	Player    uint8      //代表player seat 通常針對指定的玩家, 表示Zone的情境應該不會發生
 	Data      []uint8    // 可以是byte, bytes
 	ProtoData pb.Message // proto
+	PayloadType PayloadType //這個 payload 屬於那種型態的封	包
 }
+
 
 // CreateCBGame 建立橋牌(Contract Bridge) Game
 func CreateCBGame(tableName string, tableId int32) *Game {
 
 	//todo
 	e := newEngine()
-	//todo
-	p := newSeatManager()
 
 	cbGame := &Game{
 		//gateway:      make(chan rchanr.ChanRepWithArguments[*RoomUser, *chanResult]),
 		//findUser:     make(chan rchanr.ChanRepWithArguments[*skf.NSConn, *RoomUser]),
 		//broadcastMsg: make(chan rchanr.ChanRepWithArguments[*skf.Message, []*RoomUser]),
-		players:      p,
+		//players:     newSeatManager(),
+
+
 		engine:       e,
 		Users:        make(map[*RoomUser]struct{}),
 		name:         tableName,
@@ -77,9 +69,8 @@ type Game struct { // 玩家進入房間, 玩家進入遊戲,玩家離開房間,
 	//gateway      rchanr.ChanReqWithArguments[*RoomUser, *chanResult]
 	//findUser     rchanr.ChanReqWithArguments[*skf.NSConn, *RoomUser]
 	//broadcastMsg rchanr.ChanReqWithArguments[*skf.Message, []*RoomUser]
+	//players *SeatManager // // 遊戲座位環形,環形元素是RingItem(宣告在底下), 一場遊戲限四個人
 
-
-	players *SeatManager // // 遊戲座位環形,環形元素是RingItem(宣告在底下), 一場遊戲限四個人
 	engine  *Engine
 
 	roundSuitKeeper *RoundSuitKeep
