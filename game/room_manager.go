@@ -50,6 +50,17 @@ type (
 		//玩家是否已入座
 		isOnSeat bool
 	}
+
+	broadcastRequest struct {
+		msg    *skf.Message
+		sender *skf.NSConn // 訊息發送者 , sender != nil 表示聊天, sender == nil 表示管理,公告訊息
+		to     *skf.NSConn // (預留)私人訊息發送 , to != nil 表示私訊
+
+		//chat 與 admin同時 false 表示一般訊息發送
+		chat  bool // 聊天訊息 chat = true 訊息分(私人,公開)所以需要再判斷 sender, to
+		admin bool // 管理,公告訊息, 除了admin,chat 同為false是允許的外, admin 與 chat 是互斥的也就不會有 chat = true, admin = true
+	}
+
 	// tablePlayer就是seatItem
 	tablePlayer struct {
 		player *RoomUser
@@ -57,13 +68,15 @@ type (
 		value  uint8 //當前打出什麼牌(Card)
 	}
 
-	ZoneUsers     map[*skf.NSConn]*RoomUser
+	ZoneUsers map[*skf.NSConn]*RoomUser
+
 	RoomZoneUsers map[uint8]ZoneUsers
-	RoomManager   struct {
+
+	RoomManager struct {
 		//-------RR chan ------------
 		door         rchanr.ChanReqWithArguments[*RoomUser, chanResult]     //user 出入房間
 		table        rchanr.ChanReqWithArguments[*tableRequest, chanResult] //遊戲桌詢問
-		broadcastMsg rchanr.ChanReqWithArguments[*skf.Message, []*RoomUser] //房間廣播
+		broadcastMsg rchanr.ChanReqWithArguments[*broadcastRequest, AppErr] //房間廣播
 
 		//Table Player Ring -----
 		*ring.Ring
@@ -78,6 +91,7 @@ type (
 	}
 )
 
+// NewRoomManager RoomManager建構子
 func NewRoomManager() *RoomManager {
 	//Player
 	roomZoneUsers := make(map[uint8]ZoneUsers)
@@ -94,17 +108,18 @@ func NewRoomManager() *RoomManager {
 			player: new(RoomUser),
 		}
 	}
-
-	return &RoomManager{
-		Users:        roomZoneUsers,
-		door:         make(chan rchanr.ChanRepWithArguments[*RoomUser, chanResult]),
-		table:        make(chan rchanr.ChanRepWithArguments[*tableRequest, chanResult]),
-		broadcastMsg: make(chan rchanr.ChanRepWithArguments[*skf.Message, []*RoomUser]),
-		Ring:         r,
-	}
+	var mr *RoomManager = new(RoomManager)
+	mr.Users = roomZoneUsers
+	mr.door = make(chan rchanr.ChanRepWithArguments[*RoomUser, chanResult])
+	mr.table = make(chan rchanr.ChanRepWithArguments[*tableRequest, chanResult])
+	mr.broadcastMsg = make(chan rchanr.ChanRepWithArguments[*broadcastRequest, AppErr])
+	mr.Ring = r
+	go mr.roomManagerStartLoop()
+	return mr
 }
 
-func (mr *RoomManager) StartLoop() {
+// roomManagerStartLoop RoomManager開始幹活
+func (mr *RoomManager) roomManagerStartLoop() {
 	for {
 		select {
 		//坑: 這裡只能針對 gateway channel
@@ -112,29 +127,24 @@ func (mr *RoomManager) StartLoop() {
 			user := tracking.Question
 			switch user.Tracking {
 			case EnterRoom:
-
-				if _, exist := mr.getRoomUser(user.NsConn, user.Zone); exist {
-					tracking.Response <- chanResult{
-						err: ErrUserInRoom,
-					}
+				result := chanResult{}
+				if _, exist := mr.getRoomUser(user.NsConn); exist {
+					result.err = ErrUserInRoom
 				}
 				if mr.ticketSN > RoomUsersLimit {
-					tracking.Response <- chanResult{
-						err: ErrRoomFull,
-					}
+					result.err = ErrRoomFull
 				} else {
 
+					user.Ticket()
 					//房間進入者流水編號累增
 					mr.ticketSN++
-					user.Ticket()
 
 					// 玩家加入遊戲房間
 					mr.Users[user.Zone][user.NsConn] = user
-					tracking.Response <- chanResult{
-						err:         nil,
-						isGameStart: mr.players >= 4,
-					}
+					result.err = nil
+					result.isGameStart = mr.players >= 4
 				}
+				tracking.Response <- result
 			case LeaveRoom:
 
 				// 離開玩家
@@ -286,13 +296,26 @@ func (mr *RoomManager) StartLoop() {
 	}
 }
 
-// getRoomUser used in multi thread
-func (mr *RoomManager) getRoomUser(nsconn *skf.NSConn, zone uint8) (found *RoomUser, isExist bool) {
-	found, isExist = mr.Users[zone][nsconn]
-	return found, isExist
+// getRoomUser 是否連線已經存在房間
+func (mr *RoomManager) getRoomUser(nsConn *skf.NSConn) (found *RoomUser, isExist bool) {
+	for i := range playerSeats {
+		if found, isExist = mr.getZoneRoomUser(nsConn, playerSeats[i]); isExist {
+			return
+		}
+	}
+	return
 }
 
+// getZoneRoomUser 是否連線已經存在房間某個Zone
+func (mr *RoomManager) getZoneRoomUser(nsconn *skf.NSConn, zone uint8) (found *RoomUser, isExist bool) {
+	found, isExist = mr.Users[zone][nsconn]
+	return
+}
+
+// UserJoin 使用者進入房間, 也是 NSConn變成 RoomUser的起始點
 func (mr *RoomManager) UserJoin(ns *skf.NSConn, userName string, userZone uint8) (chanSeat *chanResult) {
+	// ns 進入房間的連線  userName 進入房間的使用者名稱   userZone 使用者由那一個Zone(east,south,west,north)進入房間
+
 	user := &RoomUser{
 		NsConn:     ns,
 		Name:       userName,
@@ -322,9 +345,8 @@ func (mr *RoomManager) UserJoin(ns *skf.NSConn, userName string, userZone uint8)
 }
 
 // UserLeave 使用者離開房間
-//
-//	ns 使用者連線, userName玩家名稱, userZone 玩家進入房間時的方位Zone
 func (mr *RoomManager) UserLeave(ns *skf.NSConn, userName string, userZone uint8) (chanSeat *chanResult) {
+	//	ns 使用者連線, userName玩家名稱, userZone 玩家進入房間時的方位Zone
 
 	user := &RoomUser{
 		NsConn:     ns,
@@ -347,14 +369,17 @@ func (mr *RoomManager) UserLeave(ns *skf.NSConn, userName string, userZone uint8
 	return &response
 }
 
-// PlayerJoin表示使用者要入桌入座
-// user 入座的使用者, flag 旗標表示入座/離座
-// 入座時 zoneSeat 表示坐定的座位, 此時 isGameStart可能會是 false(遊戲尚未開始), ture(遊戲剛好入座開始)
-//
-//	zoneSeat 為 valueNotSeat, 並且 mr.players 應該會是 >=4 表示有人搶先入座
-//
-// 離座時 zoneSeat 表示成功離座的座位
+// PlayerJoin表示使用者要入桌入座,或離開座位
 func (mr *RoomManager) playerJoin(user *RoomUser, flag pb.SeatStatus) (zoneSeat uint8, isGameStart bool) {
+	/*
+		 user 入座的使用者, flag 旗標表示入座還是離座
+		 flag
+			 入座時(SeatStatus_SitDown)
+			   zoneSeat 表示坐定的座位, isGameStart=false(遊戲尚未開始),isGameStart=ture(遊戲剛好入座開始)
+			   zoneSeat 若為valueNotSeat,表示 mr.players  >=4 表示遊戲人數已滿有人搶先入座
+			 離座時(SeatStatus_StandUp) zoneSeat 表示成功離座的座位
+	*/
+
 	zoneSeat = valueNotSet
 	var seatAt *tablePlayer
 	for i := 0; i < PlayersLimit; i++ {
@@ -405,7 +430,9 @@ func (mr *RoomManager) savePlayerCardValue(player *RoomUser) (isSaved bool) {
 	return
 }
 
+// findPlayer 回傳指定座位上的玩家以 Ring item (*tablePlayer) 回傳
 func (mr *RoomManager) findPlayer(seat uint8) (player *tablePlayer, exist bool) {
+	// seat 指定座位, exist 找到否, player 回傳的Ring item若exist為true
 
 	tp := mr.Value.(*tablePlayer)
 	if tp.zone == seat /**/ {
@@ -429,15 +456,10 @@ func (mr *RoomManager) findPlayer(seat uint8) (player *tablePlayer, exist bool) 
 	return nil, found
 }
 
-var (
-// ZoneUsers     map[*skf.NSConn]*RoomUser
-// RoomZoneUsers map[uint8]ZoneUsers
-)
-
 // zoneUsersByMap 四個Zone中的Users有效連線, 每個Zone都牌排除 player
-// 有可能 Player 中零個 User 連線  len(conn[seat]) => 0
-// players 表示四位玩家,正在遊戲桌上的四位玩家,有可能 player.NsConn 為 nil (網家斷線)
 func (mr *RoomManager) zoneUsersByMap() (users map[uint8][]*skf.NSConn, ePlayer, sPlayer, wPlayer, nPlayer *RoomUser) {
+	// 有可能 Player 中零個 User 連線  len(conn[seat]) => 0
+	// players 表示四位玩家,正在遊戲桌上的四位玩家,有可能 player.NsConn 為 nil (網家斷線)
 
 	//玩家連線
 	ePlayer, sPlayer, wPlayer, nPlayer = mr.tablePlayers()
@@ -473,8 +495,8 @@ func (mr *RoomManager) zoneUsersByMap() (users map[uint8][]*skf.NSConn, ePlayer,
 }
 
 // 區域連線
-// users 表示所有觀眾使用者連線, 東南西北玩家(player)分別是 ePlayer, sPlayer, wPlayer, nPlayer
 func (mr *RoomManager) zoneUsers() (users []*skf.NSConn, ePlayer, sPlayer, wPlayer, nPlayer *RoomUser) {
+	// users 表示所有觀眾使用者連線, 東南西北玩家(player)分別是 ePlayer, sPlayer, wPlayer, nPlayer
 
 	//玩家連線
 	ePlayer, sPlayer, wPlayer, nPlayer = mr.tablePlayers()
@@ -526,8 +548,8 @@ func (mr *RoomManager) tablePlayers() (e, s, w, n *RoomUser) {
 }
 
 // PlayersCardValue 撈取四位玩家打出的牌, 回傳的順序固定為 e(east), s(south), w(west), n(north)
-// TODO 是否需要 Lock 存取
 func (mr *RoomManager) PlayersCardValue() (e, s, w, n uint8) {
+	// TODO 是否需要 Lock 存取
 	mr.Do(func(i any) {
 		v := i.(*tablePlayer)
 		switch v.zone {
@@ -601,12 +623,15 @@ func (mr *RoomManager) acquirePlayerConnections() (e, s, w, n *skf.NSConn) {
 	return response.e.NsConn, response.s.NsConn, response.w.NsConn, response.n.NsConn
 }
 
-/* =========================== Send ======================= */
+//SendXXXX 指資訊個別的送出給玩家,觀眾通常用於遊戲資訊
+/* ============================================================================================
+ BroadcastXXXX 用於廣播,無論玩家,觀眾都會同時送出同樣的訊息,通常用於公告,聊天資訊,遊戲共同訊息(叫牌)
+======================== ====================================================================== */
 
 // SendDealToPlayer 向入座遊戲中的玩家發牌,與SendDealToZone不同, SendDealToPlayer向指定玩家發牌
-// playersHand 以Seat為Key,Value代表該Seat的待發牌
-// deckInPlay 由 Game傳入
 func (mr *RoomManager) sendDealToPlayer(deckInPlay *map[uint8]*[NumOfCardsOnePlayer]uint8, connections ...*skf.NSConn) {
+	// playersHand 以Seat為Key,Value代表該Seat的待發牌
+	// deckInPlay 由 Game傳入
 	// 注意: connections 與 deckInPlay順序必須一致 (ease, south, west, north)
 	var player *skf.NSConn
 	for idx := range connections {
@@ -758,6 +783,11 @@ func (mr *RoomManager) SendPayloadsToZone(payloads []payloadData, eventName stri
 	}
 }
 
+//BroadcastXXXX 用於廣播,無論玩家,觀眾都會同時送出同樣的訊息,通常用於公告,聊天資訊, 遊戲共同訊息(叫牌)
+/* ============================================================================================
+                               SendXXXX 指資訊個別的送出給玩家,觀眾通常用於遊戲資訊
+======================== ====================================================================== */
+
 func (mr *RoomManager) roomInfo() {
 	//Total: 每個Zone人數相加
 	eastZone := len(mr.Users[playerSeats[0]])
@@ -771,4 +801,141 @@ func (mr *RoomManager) roomInfo() {
 		slog.Int("West人數", westZone),
 		slog.Int("North人數", northZone),
 		slog.Int("房間總人數", total))
+}
+
+// broadcast 房間,遊戲廣播, 若發生問題,AppErr.Code 必定是 NSConn, AppErr.reason會是 []*RoomUser
+func (mr *RoomManager) broadcast(b *broadcastRequest) (err AppErr) {
+
+	isSkip := b.sender != nil && !b.sender.Conn.IsClosed()
+
+	var appErr = AppErr{Code: AppCodeZero}
+
+	//失敗送出的使用者(含觀眾與玩家)
+	fails := make([]*RoomUser, 0, RoomUsersLimit)
+
+	// roomUsers用來判斷全部發送錯誤還是部份發送錯誤
+	roomUsers := int(0)
+
+	for _, zone := range playerSeats {
+		for Ns, user := range mr.Users[zone] {
+
+			//略過發言訊息者
+			if isSkip && b.sender == Ns {
+				continue
+			}
+
+			//判斷是全部發送錯誤還是部份發送錯誤
+			roomUsers++
+
+			//略過已斷線玩家
+			if Ns.Conn.IsClosed() {
+				fails = append(fails, user)
+				appErr.Code = BroadcastC
+				continue
+			}
+
+			if ok := Ns.Conn.Write(*b.msg); !ok {
+				//紀錄失敗送出, 並處理這個 user
+				//TODO
+				fails = append(fails, user)
+				appErr.Code = BroadcastC
+				continue
+			}
+		}
+	}
+
+	if appErr.Code != AppCodeZero {
+		appErr.Msg = "連線出錯,聊天訊息送出失敗"
+		//發送次數與失敗人數一樣,表示全部發送錯誤
+		if roomUsers == len(fails) {
+			appErr.Err = errors.New("廣播連線全部掛掉")
+			appErr.Code = NSConnC | appErr.Code
+		}
+	}
+
+	appErr.reason = fails
+	return
+}
+
+// broadcastMsg 這是獨立的方法不是 RoomManager的屬性,將傳入的生成skf.Message
+func broadcastMsg(sender *skf.NSConn, eventName, roomName string, serializedBody []uint8, errInfo error) (msg *skf.Message) {
+
+	var from string
+	if sender != nil {
+		//TODO : 不應該是 sender.String(), 應該是 RoomUser.Name
+		from = sender.String()
+	}
+
+	msg = new(skf.Message)
+	msg.Namespace = project.RoomSpaceName
+	msg.Room = roomName
+	msg.Event = eventName
+	msg.Body = serializedBody
+	msg.SetBinary = true
+	msg.FromExplicit = from
+	msg.Err = errInfo
+	return
+}
+
+// BroadcastChat 除了發送者外,所有的都會廣播, 用於聊天室聊天訊息
+func (mr *RoomManager) BroadcastChat(sender *skf.NSConn, eventName, roomName string, serializedBody []uint8 /*body*/, errInfo error /*告訴Client有錯誤狀況發生*/) {
+	b := &broadcastRequest{
+		msg:    broadcastMsg(sender, eventName, roomName, serializedBody, errInfo),
+		sender: sender,
+		to:     nil,
+		chat:   true,
+	}
+	checkBroadcastError(mr.broadcastMsg.Probe(b), "BroadcastChat")
+}
+
+func (mr *RoomManager) BroadcastBytes(eventName, roomName string, serializedBody []uint8) {
+	b := &broadcastRequest{
+		msg: broadcastMsg(nil, eventName, roomName, serializedBody, nil),
+	}
+	checkBroadcastError(mr.broadcastMsg.Probe(b), "BroadcastBytes")
+}
+func (mr *RoomManager) BroadcastByte(eventName, roomName string, body uint8) {
+	b := &broadcastRequest{
+		msg: broadcastMsg(nil, eventName, roomName, []byte{body}, nil),
+	}
+	checkBroadcastError(mr.broadcastMsg.Probe(b), "BroadcastByte")
+}
+func (mr *RoomManager) BroadcastString(eventName, roomName string, body string) {
+	b := &broadcastRequest{
+		msg: broadcastMsg(nil, eventName, roomName, []byte(body), nil),
+	}
+	checkBroadcastError(mr.broadcastMsg.Probe(b), "BroadcastString")
+}
+func (mr *RoomManager) BroadcastProtobuf(eventName, roomName string, body pb.Message) {
+	marshal, err := pb.Marshal(body)
+	if err != nil {
+		slog.Error("ProtoMarshal(BroadcastProtobuf)", utilog.Err(err))
+		return
+	}
+
+	b := &broadcastRequest{
+		msg: broadcastMsg(nil, eventName, roomName, marshal, nil),
+	}
+	checkBroadcastError(mr.broadcastMsg.Probe(b), "BroadcastProtobuf")
+}
+
+// 檢驗BroadcastXXXX後的結果,並log錯誤
+func checkBroadcastError(probe AppErr, broadcastName string) {
+	if probe.Code != AppCodeZero {
+		errorSubject := fmt.Sprintf("訊息送出失敗(%s)", broadcastName)
+		switch probe.Code {
+		case BroadcastC | NSConnC:
+			slog.Error("嚴重錯誤(BroadcastChat)", utilog.Err(probe.Err))
+			fallthrough
+			//TODO log here
+		default: /*BroadcastC*/
+			slog.Error(errorSubject, slog.String("msg", probe.Msg))
+			fails := probe.reason.([]*RoomUser)
+			var fail *RoomUser
+			for i := range fails {
+				fail = fails[i]
+				slog.Error(" 錯誤資訊", slog.String("RoomUser", fail.Name), slog.String("區域", fmt.Sprintf("%s", CbSeat(fail.Zone))), slog.Any("連線", fail.NsConn))
+			}
+		}
+	}
 }
