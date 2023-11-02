@@ -1,6 +1,7 @@
 package project
 
 import (
+	"context"
 	"log/slog"
 
 	"github.com/moszorn/pb/cb"
@@ -90,7 +91,7 @@ var (
 )
 
 // 初始化Namespace
-func initNamespace() {
+func initNamespace(pid context.Context) {
 
 	rooms := make(map[string]*game.Game)
 	roomsCounter := make(map[string]*cb.LobbyTable)
@@ -101,7 +102,8 @@ func initNamespace() {
 	}
 
 	counterService = NewCounterService(&roomsCounter)
-	roomSpaceService = NewRoomSpaceService(&rooms)
+
+	roomSpaceService = NewRoomSpaceService(pid, &rooms)
 
 	lobbySpaceService = NewLobbySpaceService()
 

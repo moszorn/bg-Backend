@@ -26,17 +26,22 @@ type (
 	roomNamespace struct {
 		UserJoinRoom  string `json:"userJoinRoom,omitempty"`
 		UserLeaveRoom string `json:"userLeaveRoom,omitempty"`
-		PlayerOnSeat  string `json:"playerOnSeat,omitempty"`
-		PlayerOnLeave string `json:"playerOnLeave,omitempty"`
+
+		TablePrivateOnSeat string `json:"tablePrivateOnSeat,omitempty"` //Done (私人)
+		TableOnSeat        string `json:"tableOnSeat,omitempty"`        //Done (廣播)
+
+		TablePrivateOnLeave string `json:"tablePrivateOnLeave,omitempty"` //Done (私人)
+		TableOnLeave        string `json:"tableOnLeave,omitempty"`        //Done (廣播)
 
 		NamespaceCommon string `json:"namespaceCommon,omitempty"`
-		Private         string `json:"private,omitempty"`
+		Private         string `json:"private,omitempty"` //Done
+
+		//遊戲開始發牌事件(clientEvent Only)
+		GamePrivateDeal string `json:"gamePrivateDeal,omitempty"` //Done (私人)
+		GameDeal        string `json:"gameDeal,omitempty"`        //Done (廣播)
 
 		//私人訊息:玩家座位
 		GamePrivateOnSeat string `json:"gamePrivateOnSeat,omitempty"`
-
-		//遊戲開始發牌事件(clientEvent Only)
-		GamePrivateRoundStartToDeal string `json:"gamePrivateRoundStartToDeal,omitempty"`
 
 		//競叫起叫(起叫)是一個特殊事件,前端必須特別處理,其他競叫就是一般作法 (clientEvent only)
 		GameOpenBidStart string `json:"gameOpenBidStart,omitempty"`
@@ -48,7 +53,8 @@ type (
 		GameCardsConstraint string `json:"gameCardsConstraint,omitempty"`
 
 		//通知
-		GameNotyBid            string `json:"gameNotyBid,omitempty"`
+		GamePrivateNotyBid     string `json:"gamePrivateNotyBid,omitempty"` //Done (私人)
+		GameNotyBid            string `json:"gameNotyBid,omitempty"`        //Done (廣播)
 		GameNotyFirstLead      string `json:"gameNotyFirstLead,omitempty"`
 		GameNotyGameReshuffle  string `json:"gameNotyGameReshuffle,omitempty"`
 		GameNotyDummy          string `json:"gameNotyDummy,omitempty"`
@@ -62,7 +68,7 @@ type (
 		GameNotyShowDeclarerHand string `json:"gameNotyShowDeclarerHand,omitempty"`
 
 		//接收Space時發生錯誤的回覆
-		ErrorSpace string `json:"errorSpace,omitempty"`
+		ErrorSpace string `json:"errorSpace,omitempty"` //Done
 		//接收Room時發生錯誤的回覆
 		ErrorRoom string `json:"errorRoom,omitempty"`
 		//接收Game時發生錯誤的回覆
@@ -96,43 +102,51 @@ var (
 	/*************** GameNamespace setting *******************************/
 	//client -> server
 	serverRoomSpace = &roomNamespace{
-		UserJoinRoom:    "以_OnRoomJoined代替",
-		UserLeaveRoom:   "UserLeaveRoom",
-		NamespaceCommon: "cb.common",
-		PlayerOnSeat:    "PlayerOnSeat",
-		PlayerOnLeave:   "PlayerOnLeave",
-		GameBid:         "game.bid",
-		GamePlay:        "game.play",
-		GameRoleStore:   "game.role",
+		UserJoinRoom:        "以_OnRoomJoined代替",
+		UserLeaveRoom:       "UserLeaveRoom",
+		NamespaceCommon:     "cb.common",
+		TableOnLeave:        "TableOnLeave",
+		TablePrivateOnLeave: "TablePrivateOnLeave",
+		TableOnSeat:         "TableOnSeat",
+		TablePrivateOnSeat:  "TablePrivateOnSeat",
+
+		GameBid:       "game.bid",
+		GamePlay:      "game.play",
+		GameRoleStore: "game.role",
 	}
 	// server -> client
 	clientRoomSpace = &roomNamespace{
-		UserJoinRoom:                "UserJoinRoom",
-		UserLeaveRoom:               "UserLeaveRoom",
-		NamespaceCommon:             "cb.common",
-		PlayerOnSeat:                "PlayerOnSeat",
-		PlayerOnLeave:               "PlayerOnLeave",
-		Private:                     "private",
-		GamePrivateRoundStartToDeal: "game.start.deal",
-		GamePrivateOnSeat:           "game.start.seat",
-		GameOpenBidStart:            "game.start.bid",
-		GameBid:                     "game.bid",
-		GamePlay:                    "game.play",
-		GameRoleStore:               "game.role",
-		GameNotyBid:                 "game.noty.bid",
-		GameNotyFirstLead:           "game.noty.lead",
-		GameNotyGameReshuffle:       "game.noty.reshuffle",
-		GameNotyDummy:               "game.noty.dummy",
-		GameNotyResult:              "game.noty.result",
-		GameNotyNext:                "game.noty.next",
-		GameNotyAutoPlay:            "game.noty.autoplay",
-		GameNotyCardRefresh:         "game.noty.card.refresh",
-		GameCardsConstraint:         "game.constraint.cards",
-		GameNotyShowDeclarerHand:    "game.noty.declarer",
-		GameNotyClearGameTable:      "game.noty.cln.table",
-		ErrorSpace:                  "err.space",
-		ErrorRoom:                   "err.room",
-		ErrorGame:                   "err.game",
+		UserJoinRoom:        "UserJoinRoom",
+		UserLeaveRoom:       "UserLeaveRoom",
+		NamespaceCommon:     "cb.common",
+		TableOnLeave:        "table.leave",     //Done
+		TablePrivateOnLeave: "table.p.leave",   //Done
+		TableOnSeat:         "table.seat",      //Done
+		TablePrivateOnSeat:  "table.p.seat",    //Done
+		Private:             "private",         // Done
+		GamePrivateDeal:     "game.p.deal",     //Done
+		GameDeal:            "game.deal",       //Done
+		GameNotyBid:         "game.noty.bid",   // Done
+		GamePrivateNotyBid:  "game.p.noty.bid", //Done
+
+		GamePrivateOnSeat:        "game.start.seat",
+		GameOpenBidStart:         "game.start.bid",
+		GameBid:                  "game.bid",
+		GamePlay:                 "game.play",
+		GameRoleStore:            "game.role",
+		GameNotyFirstLead:        "game.noty.lead",
+		GameNotyGameReshuffle:    "game.noty.reshuffle",
+		GameNotyDummy:            "game.noty.dummy",
+		GameNotyResult:           "game.noty.result",
+		GameNotyNext:             "game.noty.next",
+		GameNotyAutoPlay:         "game.noty.autoplay",
+		GameNotyCardRefresh:      "game.noty.card.refresh",
+		GameCardsConstraint:      "game.constraint.cards",
+		GameNotyShowDeclarerHand: "game.noty.declarer",
+		GameNotyClearGameTable:   "game.noty.cln.table",
+		ErrorSpace:               "err.space",
+		ErrorRoom:                "err.room",
+		ErrorGame:                "err.game",
 	}
 
 	// Game 命名空間

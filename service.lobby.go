@@ -18,6 +18,16 @@ type CounterService interface {
 	RoomSub(nsConn *skf.NSConn, roomName string)
 }
 
+type BridgeGameLobby struct {
+	wo     *waitOnce   //專用設定 BridgeGameLobby.server
+	server *skf.Server //第一個client連線進來時,從client NSConn.Conn.serverEvent keep server
+
+	//進出大廳人數計數委派LobbyRooms負責,在chanLoop中監聽是否人數異動並廣播
+	counter *Counter
+
+	IsStart bool
+}
+
 func NewLobbySpaceService() *BridgeGameLobby {
 	var appLobby = &BridgeGameLobby{
 		wo:      newWaiterOnce(),
@@ -27,18 +37,6 @@ func NewLobbySpaceService() *BridgeGameLobby {
 	go appLobby.chanLoop()
 	appLobby.IsStart = true
 	return appLobby
-}
-
-var once sync.Once
-
-type BridgeGameLobby struct {
-	wo     *waitOnce   //專用設定 BridgeGameLobby.server
-	server *skf.Server //第一個client連線進來時,從client NSConn.Conn.serverEvent keep server
-
-	//進出大廳人數計數委派LobbyRooms負責,在chanLoop中監聽是否人數異動並廣播
-	counter *Counter
-
-	IsStart bool
 }
 
 func (app *BridgeGameLobby) chanLoop() {
@@ -81,6 +79,8 @@ func (app *BridgeGameLobby) eventHandlerMap() map[string]skf.MessageHandlerFunc 
 		skf.OnNamespaceDisconnect: app._OnNamespaceDisconnect,
 	}
 }
+
+var once sync.Once
 
 // 從第一個連線Conn中取得Server,以方便後續Lobby對所有Namespace的廣播
 func (app *BridgeGameLobby) _OnceForServer(c *skf.NSConn) {

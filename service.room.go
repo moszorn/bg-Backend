@@ -14,14 +14,14 @@ import (
 	"project/game"
 )
 
-func NewRoomSpaceService(rooms *map[string]*game.Game) AllRoom {
+func NewRoomSpaceService(pid context.Context, rooms *map[string]*game.Game, counter CounterService) AllRoom {
 	if len(*rooms) == 0 {
 		panic("key不存在")
 	}
 
 	var roomIdSeq int32 = 1
 	for roomName := range *rooms {
-		(*rooms)[roomName] = game.CreateCBGame(roomName, roomIdSeq)
+		(*rooms)[roomName] = game.CreateCBGame(pid, counter, roomName, roomIdSeq)
 		roomIdSeq++
 	}
 	return *rooms
@@ -72,6 +72,7 @@ func (rooms AllRoom) playerOnLeave(ns *skf.NSConn, m skf.Message) error {
 	srv.BroadcastString(ns, ClnRoomEvents.PlayerOnLeave, msg)
 	return nil
 }
+
 func (rooms AllRoom) playerOnSeat(ns *skf.NSConn, m skf.Message) error {
 	var (
 		srv = rooms[m.Room]

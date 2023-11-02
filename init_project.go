@@ -1,6 +1,7 @@
 package project
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -63,6 +64,6 @@ var (
 )
 
 // InitProject 必須由 main呼叫
-func InitProject() {
-	initNamespace()
+func InitProject(pid context.Context) {
+	initNamespace(pid)
 }

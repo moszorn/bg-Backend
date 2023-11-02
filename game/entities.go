@@ -283,7 +283,7 @@ type (
 		Zone   uint8 /*east south west north*/
 
 		//這個屬性要改成時間
-		TicketTime time.Time //  入房間的順序(門票)編號,進入房間必須累計1,開房間必須減去1
+		TicketTime time.Time //  入房間時間,若在Ring中表示上桌的時間
 		Tracking   Track
 
 		Bid  uint8 //所叫的叫品
@@ -755,12 +755,14 @@ var (
 	}
 )
 
-/************************************************************************************/
+/* ********************************************************************************** */
+
+// GameConstArg Game 常用常數包裝
 type GameConstArg struct {
 	ValueNotSet uint8
 }
 
-// GameConstantExport 對外有關Game 常數給 project
+// GameConstantExport 將 Game 常用常數輸出給 project package
 func GameConstantExport() *GameConstArg {
 	return &GameConstArg{
 		ValueNotSet: valueNotSet,

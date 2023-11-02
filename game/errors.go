@@ -27,13 +27,13 @@ type AppCode byte
 
 const (
 	AppCodeZero  AppCode = iota // 保留
-	ApplicationC                //一般應用程式錯誤
-	BroadcastC                  //廣播錯誤
-	GamingC                     // 遊戲錯誤
-	RoomSeatC                   //房間或遊戲座位出錯
-	NSConnC                     //連線錯誤
-	SystemC                     //系統錯誤 (Memory leak, Memory Burst, DeadLock, OverFlow)
-	InfraC                      // EC2 錯誤
+	ApplicationC                //一般應用程式有關, ,可能是Bud,錯誤
+	BroadcastC                  //廣播有,可能是Bud,錯誤
+	GamingC                     // 遊戲有,可能是Bud,錯誤
+	RoomSeatC                   //房間或遊戲座位有關,可能是Bud,錯誤
+	NSConnC                     //連線有關,可能是Bud,錯誤
+	SystemC                     //系統有關,可能是Bud,錯誤
+	InfraC                      // AWS有關, ex:EC2 錯誤
 
 )
 

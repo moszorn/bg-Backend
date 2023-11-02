@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -38,10 +39,12 @@ func init() {
 func main() {
 	slog.Debug("錯誤訊息測試", utilog.Err(errors.New("hello world")))
 
+	ctx := context.WithValue(context.Background(), "pid", pid)
+
 	ctrl := make(chan os.Signal)
 	signal.Notify(ctrl, os.Kill, os.Interrupt)
 
-	project.InitProject()
+	project.InitProject(ctx)
 
 	go gameServerStart()
 
