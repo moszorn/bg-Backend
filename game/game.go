@@ -104,7 +104,7 @@ func (g *Game) Close() {
 
 // ----------------------engine
 
-// setEnginePlayer, Old: setEnginePlaySeat 引擎玩家更替
+// setEnginePlayer, Old: setEnginePlaySeat 引擎玩家更替, 新局,或換新的一局時呼叫
 func (g *Game) setEnginePlayer(player uint8, next uint8) {
 
 	// player 設定player當前玩家
@@ -116,7 +116,7 @@ func (g *Game) setEnginePlayer(player uint8, next uint8) {
 
 // --------------------- seat
 
-// SeatShift , Old: setSeatAndGetNextPlayer 房間座位更替
+// SeatShift , Old: setSeatAndGetNextPlayer 房間座位更替,新局,或換新的一局時呼叫
 func (g *Game) SeatShift(seat uint8) (nextSeat uint8) {
 	return g.roomManager.SeatShift(seat)
 }
@@ -135,22 +135,22 @@ func (g *Game) start() (bidder uint8, forbidden []uint8, done bool) {
 	return
 }
 
-// UserJoin 使用者進入房間
-func (g *Game) UserJoin(ns *skf.NSConn, userName string, userZone uint8) {
-	go g.roomManager.UserJoin(ns, userName, userZone)
+// UserJoin 使用者進入房間 必須參數RoomUser {*skf.NSConn, userName, userZone}
+func (g *Game) UserJoin(user *RoomUser) {
+	go g.roomManager.UserJoin(user)
 }
 
 // UserLeave 使用者離開房間
-func (g *Game) UserLeave(ns *skf.NSConn, userName string, userZone uint8) {
-	go g.roomManager.UserLeave(ns, userName, userZone)
+func (g *Game) UserLeave(user *RoomUser) {
+	go g.roomManager.UserLeave(user)
 }
 
-func (g *Game) PlayerJoin(ns *skf.NSConn, userName string, userZone uint8) {
-	go g.roomManager.PlayerJoin(ns, userName, userZone)
+func (g *Game) PlayerJoin(user *RoomUser) {
+	go g.roomManager.PlayerJoin(user)
 }
 
-func (g *Game) PlayerLeave(ns *skf.NSConn, userName string, userZone uint8) {
-	go g.roomManager.PlayerLeave(ns, userName, userZone)
+func (g *Game) PlayerLeave(user *RoomUser) {
+	go g.roomManager.PlayerLeave(user)
 }
 
 /* ======================================================================================== */

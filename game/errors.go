@@ -1,6 +1,9 @@
 package game
 
-import "errors"
+import (
+	"errors"
+	"fmt"
+)
 
 var (
 	ErrRoomFull         = errors.New("房間人數上限,無法再進入")
@@ -47,3 +50,15 @@ type (
 		Code   AppCode
 	}
 )
+
+func (appErr *AppErr) Error() string {
+	return fmt.Sprintf("%d: %s", appErr.Code, appErr.Msg)
+}
+
+func NewAppError(code AppCode, msg string, reason interface{}) (err *AppErr) {
+	err = new(AppErr)
+	err.Msg = msg
+	err.Code = code
+	err.reason = reason
+	return
+}

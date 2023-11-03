@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/moszorn/pb"
 	"github.com/moszorn/utils/skf"
 )
 
@@ -279,31 +280,25 @@ const (
 type (
 	RoomUser struct {
 		NsConn *skf.NSConn
-		Name   string
-		Zone   uint8 /*east south west north*/
 
-		//這個屬性要改成時間
-		TicketTime time.Time //  入房間時間,若在Ring中表示上桌的時間
-		Tracking   Track
+		Tracking Track
 
-		Bid  uint8 //所叫的叫品
-		Play uint8 //所出的牌
-	}
+		//TicketTime time.Time //  入房間時間,若在Ring中表示上桌的時間
+		//Bid  uint8 //所叫的叫品
+		//Play uint8 //所出的牌
+		//Name   string
+		//Zone   uint8 /*east south west north*/
 
-	// SendInfo 表示要傳遞資訊到連線玩家,
-	// Seat表示正坐在座位上的連線
-	SendInfo struct {
-		NsConn *skf.NSConn
-		//可能是protocol buf
-		Value interface{}
+		pb.PlayingUser
+		Zone8 uint8 // 從 PlayingUser Zone轉型過來
 	}
 )
 
 func (ru *RoomUser) Ticket() {
-	ru.TicketTime = time.Now()
+	ru.TicketTime = pb.LocalTimestamp(time.Now())
 }
 func (ru *RoomUser) TicketString() string {
-	return ru.TicketTime.Format("01/02 15:04:05")
+	return ru.TicketTime.AsTime().Format("01/02 15:04:05")
 }
 
 /************************************************************************************/

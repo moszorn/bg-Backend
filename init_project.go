@@ -24,10 +24,10 @@ var (
 
 	roomLog = func(c *skf.NSConn, msg skf.Message) {
 		slog.Debug("🏠",
+			slog.String("room", msg.Room),
 			slog.String("connId", shortConnID(c)),
 			slog.String("event", msg.Event),
-			slog.String("room", msg.Room),
-			slog.String("namespace", msg.Namespace))
+		)
 	}
 
 	generalLog = func(c *skf.NSConn, msg skf.Message) {
@@ -50,10 +50,11 @@ var (
 		}
 
 		slog.Debug("一般日誌",
-			slog.String("connId", shotId),
-			slog.String("namespace", namespace),
+			slog.String("space", namespace),
+			slog.String("event", event),
 			slog.String("room", room),
-			slog.String("event", event))
+			slog.String("connId", shotId))
+
 		if 0 < len(msg.Body) {
 			slog.Debug("一般日誌", slog.String("Body", string(msg.Body)))
 		}

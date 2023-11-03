@@ -1,4 +1,4 @@
-package project
+package game
 
 //go:generate stringer -type=ServerClientEnum --linecomment -output namespace.enum_strings.go
 
@@ -24,8 +24,10 @@ type (
 
 	// 屬性名稱是PrivateXxxx表示是通知個人私人訊號否則是大眾廣播訊號
 	roomNamespace struct {
-		UserJoinRoom  string `json:"userJoinRoom,omitempty"`
-		UserLeaveRoom string `json:"userLeaveRoom,omitempty"`
+		UserPrivateJoin  string `json:"userJoinRoom,omitempty"`  //Done (私人)
+		UserJoin         string `json:"userJoinRoom,omitempty"`  //Done (廣播)
+		UserPrivateLeave string `json:"userLeaveRoom,omitempty"` //Done (私人)
+		UserLeave        string `json:"userLeaveRoom,omitempty"` //Done (廣播)
 
 		TablePrivateOnSeat string `json:"tablePrivateOnSeat,omitempty"` //Done (私人)
 		TableOnSeat        string `json:"tableOnSeat,omitempty"`        //Done (廣播)
@@ -102,22 +104,20 @@ var (
 	/*************** GameNamespace setting *******************************/
 	//client -> server
 	serverRoomSpace = &roomNamespace{
-		UserJoinRoom:        "以_OnRoomJoined代替",
-		UserLeaveRoom:       "UserLeaveRoom",
-		NamespaceCommon:     "cb.common",
-		TableOnLeave:        "TableOnLeave",
-		TablePrivateOnLeave: "TablePrivateOnLeave",
-		TableOnSeat:         "TableOnSeat",
-		TablePrivateOnSeat:  "TablePrivateOnSeat",
+		UserPrivateJoin:     "UserPrivateJoin",     //Done
+		UserPrivateLeave:    "UserPrivateLeave",    //Done
+		TablePrivateOnLeave: "TablePrivateOnLeave", //Done
+		TablePrivateOnSeat:  "TablePrivateOnSeat",  //Done
 
-		GameBid:       "game.bid",
-		GamePlay:      "game.play",
-		GameRoleStore: "game.role",
+		NamespaceCommon: "cb.common",
+		GameBid:         "game.bid",
+		GamePlay:        "game.play",
+		GameRoleStore:   "game.role",
 	}
 	// server -> client
 	clientRoomSpace = &roomNamespace{
-		UserJoinRoom:        "UserJoinRoom",
-		UserLeaveRoom:       "UserLeaveRoom",
+		UserJoin:            "UserJoin",
+		UserLeave:           "UserLeave",
 		NamespaceCommon:     "cb.common",
 		TableOnLeave:        "table.leave",     //Done
 		TablePrivateOnLeave: "table.p.leave",   //Done

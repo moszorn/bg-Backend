@@ -12,7 +12,6 @@ import (
 	utilog "github.com/moszorn/utils/log"
 	"github.com/moszorn/utils/rchanr"
 	"github.com/moszorn/utils/skf"
-	"project"
 )
 
 // RoomManager 管理進入房間的所有使用者,包含廣播所有房間使用者,發送訊息給指定玩家
@@ -112,8 +111,12 @@ func newRoomManager(shutdown context.Context) *RoomManager {
 	r := ring.New(PlayersLimit)
 	for i := 0; i < PlayersLimit; i++ {
 		r.Value = &tablePlayer{
-			zone:   playerSeats[i],
-			player: new(RoomUser), /*player一經初始化後永不銷毀*/
+			zone: playerSeats[i],
+			player: &RoomUser{
+				NsConn:      nil,
+				PlayingUser: pb.PlayingUser{Zone: uint32(valueNotSet)},
+				Zone8:       valueNotSet,
+			}, /*player一經初始化後永不銷毀*/
 		}
 	}
 	var mr *RoomManager = new(RoomManager)
@@ -154,7 +157,7 @@ func (mr *RoomManager) Start() {
 					mr.ticketSN++
 
 					// 玩家加入遊戲房間
-					mr.Users[user.Zone][user.NsConn] = user
+					mr.Users[user.Zone8][user.NsConn] = user
 					result.err = nil //成功入房
 					result.isGameStart = mr.players >= 4
 				}
@@ -162,7 +165,7 @@ func (mr *RoomManager) Start() {
 			case LeaveRoom:
 
 				// 移除離開玩家. EnterRoom時的value也一並移除參考
-				delete(mr.Users[user.Zone], user.NsConn)
+				delete(mr.Users[user.Zone8], user.NsConn)
 
 				//房間進入者流水編號遞減
 				mr.ticketSN--
@@ -243,7 +246,7 @@ func (mr *RoomManager) Start() {
 				result := chanResult{}
 
 				if mr.aa >= 4 {
-					result.seat = req.player.Zone //user.Player
+					result.seat = req.player.Zone8 //user.Player
 					result.aa = mr.aa
 					result.err = nil
 					crwa.Response <- result
@@ -253,7 +256,7 @@ func (mr *RoomManager) Start() {
 
 				if !mr.savePlayerCardValue(req.player) {
 					result.err = errors.New("座位打出的牌有誤")
-					result.seat = req.player.Zone
+					result.seat = req.player.Zone8
 					result.aa = mr.aa
 					result.isGameStart = mr.players >= 4
 					result.err = nil
@@ -263,7 +266,7 @@ func (mr *RoomManager) Start() {
 				}
 
 				mr.aa++
-				result.seat = req.player.Zone
+				result.seat = req.player.Zone8
 				result.err = nil
 				result.aa = mr.aa
 				crwa.Response <- result
@@ -275,7 +278,7 @@ func (mr *RoomManager) Start() {
 				result.err = nil
 
 				var ringItem *tablePlayer
-				ringItem, result.isOnSeat = mr.findPlayer(req.player.Zone)
+				ringItem, result.isOnSeat = mr.findPlayer(req.player.Zone8)
 
 				if result.isOnSeat {
 					//找到指定玩家連線
@@ -325,20 +328,13 @@ func (mr *RoomManager) getZoneRoomUser(nsconn *skf.NSConn, zone uint8) (found *R
 	return
 }
 
-// UserJoin 使用者進入房間, 也是 NSConn變成 RoomUser的起始點
-func (mr *RoomManager) UserJoin(ns *skf.NSConn,  userName string, userZone uint8) {
-	// ns 進入房間的連線  userName 進入房間的使用者名稱   userZone 使用者由那一個Zone(east,south,west,north)進入房間
+// UserJoin 使用者進入房間, 必須參數RoomUser {*skf.NSConn, userName, userZone}
+func (mr *RoomManager) UserJoin(user *RoomUser) {
 
-	user := &RoomUser{
-		NsConn:     ns,
-		Name:       userName,
-		TicketTime: time.Now(),
-		Tracking:   IddleTrack,
-		Zone:       userZone,
-	}
 	//TBC 好像 Tracking只用來當成 switch的判斷,不需要使用 preTracking 這個機制
 	// TODO 移除 preTracking
 	preTracking := user.Tracking
+	user.TicketTime = pb.LocalTimestamp(time.Now())
 	user.Tracking = EnterRoom
 
 	var response chanResult
@@ -351,13 +347,14 @@ func (mr *RoomManager) UserJoin(ns *skf.NSConn,  userName string, userZone uint8
 		//TODO 移除 Tracking還原
 		user.Tracking = preTracking
 		slog.Debug("使用者進入房間(UserJoin)", utilog.Err(response.err))
-		if ns != nil && !ns.Conn.IsClosed() {
-			ns.Emit(project.ClnRoomEvents.ErrorSpace, []byte(response.err.Error()))
+		if user.NsConn != nil && !user.NsConn.Conn.IsClosed() {
+			user.NsConn.Emit(ClnRoomEvents.ErrorSpace, []byte(response.err.Error()))
 		}
+		user = nil
 		return
 	}
 
-	mr.g.counterAdd(ns, mr.g.name)
+	mr.g.counterAdd(user.NsConn, mr.g.name)
 
 	//告知client 切換到房間
 	//ns.Emit(project.ClnRoomEvents.Private, []byte("你已經入房"))
@@ -367,16 +364,8 @@ func (mr *RoomManager) UserJoin(ns *skf.NSConn,  userName string, userZone uint8
 }
 
 // UserLeave 使用者離開房間
-func (mr *RoomManager) UserLeave(ns *skf.NSConn, userName string, userZone uint8) {
-	//	ns 使用者連線, userName玩家名稱, userZone 玩家進入房間時的方位Zone
+func (mr *RoomManager) UserLeave(user *RoomUser) {
 
-	user := &RoomUser{
-		NsConn:     ns,
-		Name:       userName,
-		TicketTime: time.Time{},
-		Tracking:   0,
-		Zone:       userZone,
-	}
 	//TBC 好像 Tracking只用來當成 switch的判斷,不需要使用 preTracking 這個機制
 	// TODO 移除 preTracking
 	preTracking := user.Tracking
@@ -388,32 +377,27 @@ func (mr *RoomManager) UserLeave(ns *skf.NSConn, userName string, userZone uint8
 		//TODO 移除 Tracking還原
 		user.Tracking = preTracking
 		slog.Debug("使用者離開房間(UserLeave)", utilog.Err(response.err))
-		if ns != nil && !ns.Conn.IsClosed() {
-			ns.Emit(project.ClnRoomEvents.ErrorSpace, []byte(response.err.Error()))
+		if user.NsConn != nil && !user.NsConn.Conn.IsClosed() {
+			user.NsConn.Emit(ClnRoomEvents.ErrorSpace, []byte(response.err.Error()))
 		}
+		user = nil
 		return
 	}
 
-	mr.g.counterSub(ns, mr.g.name)
+	mr.g.counterSub(user.NsConn, mr.g.name)
 
 	//告知client切換回大廳
-	ns.Emit(skf.OnRoomLeft, nil)
+	user.NsConn.Emit(skf.OnRoomLeft, nil)
 	//ns.Emit(skf.OnRoomLeft, []byte(fmt.Sprintf("已順利離開%s遊戲房", mr.roomNameId)))
 
 	//TODO 廣播有人離開房間
 
 }
 
-
 // PlayerJoin 加入, 底層透過呼叫 playerJoin, 最後判斷使否開局,與送出發牌
-func (mr *RoomManager) PlayerJoin(ns *skf.NSConn, userName string, userZone uint8) {
-	user := &RoomUser{
-		NsConn:     ns,
-		Name:       userName,
-		TicketTime: time.Now(),
-		Tracking:   EnterGame,
-		Zone:       userZone,
-	}
+func (mr *RoomManager) PlayerJoin(user *RoomUser) {
+
+	user.Tracking = EnterGame
 
 	var response chanResult
 
@@ -423,34 +407,33 @@ func (mr *RoomManager) PlayerJoin(ns *skf.NSConn, userName string, userZone uint
 	// 房間已滿(超出RoomUsersLimit), 或使用者已存在房間
 	if response.err != nil {
 		slog.Debug("使用者進入房間(UserJoin)", utilog.Err(response.err))
-		if ns != nil && !ns.Conn.IsClosed() {
-			ns.Emit(project.ClnRoomEvents.ErrorSpace, []byte(response.err.Error()))
+		if user.NsConn != nil && !user.NsConn.Conn.IsClosed() {
+			user.NsConn.Emit(ClnRoomEvents.ErrorSpace, []byte(response.err.Error()))
 		}
 		return
 	}
 
 	// 房間已滿,已經晚一步
 	if response.isGameStart && !response.isOnSeat {
-		ns.Emit(skf.OnRoomJoined, nil)
+		user.NsConn.Emit(skf.OnRoomJoined, nil)
 		return
 	}
 
-
 	//第0步: 儲存seat到Connection Store,表示這個Connection是一個玩家
 	// 注意
-	ns.Conn.Set(KeySeat, CbSeat(response.seat))
+	user.NsConn.Conn.Set(KeySeat, CbSeat(response.seat))
 
 	// 第一步: 上桌
 	// 告訴玩家你已經上桌,前端必須處理
-	ns.Emit(project.ClnRoomEvents.TablePrivateOnSeat, []byte{ response.seat>>1})
+	user.NsConn.Emit(ClnRoomEvents.TablePrivateOnSeat, []byte{response.seat >> 1})
 
 	// 廣播已經有人上桌,前端必須處理
 	load := payloadData{
-		ProtoData:   , // TODO: 送 protobuf payload
+		ProtoData:   ______________________________________, // TODO: 送 protobuf payload
 		PayloadType: ProtobufType,
 	}
 
-	mr.SendPayloadsToZone([]payloadData{load}, project.ClnRoomEvents.TableOnSeat)
+	mr.SendPayloadsToZone([]payloadData{load}, ClnRoomEvents.TableOnSeat)
 
 	// 順利坐到位置剛好滿四人局開始
 	if response.isOnSeat && response.isGameStart {
@@ -462,37 +445,30 @@ func (mr *RoomManager) PlayerJoin(ns *skf.NSConn, userName string, userZone uint
 		bidder, forbidden, _ := mr.g.start()
 
 		//第三步: 提示開叫
-			//第一個表示上一個叫者座位(因為是首叫,所以上一個叫者為valueNotSet)
-			//第二個表示上一個叫者叫品CbBid(上一次叫品,因為是第一次叫所以叫品是valueNotSet)
-			//第三個表示下一個叫牌者
+		//第一個表示上一個叫者座位(因為是首叫,所以上一個叫者為valueNotSet)
+		//第二個表示上一個叫者叫品CbBid(上一次叫品,因為是第一次叫所以叫品是valueNotSet)
+		//第三個表示下一個叫牌者
 		var payload []uint8
 		payload = append(payload, valueNotSet, valueNotSet, bidder>>1)
-			//最後一個是禁叫品項
+		//最後一個是禁叫品項
 		payload = append(payload, forbidden...)
 
 		//延遲,是因為最後進來的玩家前端render速度太慢,會導致接收到NotyBid時來不及,所以延遲幾秒
 		time.Sleep(time.Millisecond * 700)
 
-
 		//個人開叫提示, 前端必須處理
-		ns.EmitBinary(project.ClnRoomEvents.GamePrivateNotyBid, payload)
+		user.NsConn.EmitBinary(ClnRoomEvents.GamePrivateNotyBid, payload)
 
 		//廣播提示開叫開始, 前端必須處理
-		mr.BroadcastByte(project.ClnRoomEvents.GameNotyBid, mr.g.name , bidder >> 1)
+		mr.BroadcastByte(ClnRoomEvents.GameNotyBid, mr.g.name, bidder>>1)
 	}
-
 
 }
 
 // PlayerLeave 加入, 底層透過呼叫 playerJoin, 進行離桌程序
-func (mr *RoomManager) PlayerLeave(ns *skf.NSConn, userName string, userZone uint8) {
-	user := &RoomUser{
-		NsConn:     ns,
-		Name:       userName,
-		TicketTime: time.Now(),
-		Tracking:   LeaveGame,
-		Zone:       userZone,
-	}
+func (mr *RoomManager) PlayerLeave(user *RoomUser) {
+
+	user.Tracking = LeaveGame
 
 	var response chanResult
 
@@ -502,33 +478,32 @@ func (mr *RoomManager) PlayerLeave(ns *skf.NSConn, userName string, userZone uin
 	// 房間已滿(超出RoomUsersLimit), 或使用者已存在房間
 	if response.err != nil {
 		slog.Debug("使用者進入房間(UserJoin)", utilog.Err(response.err))
-		if ns != nil && !ns.Conn.IsClosed() {
-			ns.Emit(project.ClnRoomEvents.ErrorSpace, []byte(response.err.Error()))
+		if user.NsConn != nil && !user.NsConn.Conn.IsClosed() {
+			user.NsConn.Emit(ClnRoomEvents.ErrorSpace, []byte(response.err.Error()))
 		}
 		return
 	}
 
 	// 表示發生問題,
-	if  response.isOnSeat {
+	if response.isOnSeat {
 		//ns.Emit(skf.OnRoomJoined, nil)
 		//紀錄 Log
 		// 告訴玩家你已經上桌,前端必須處理
-		ns.Emit(project.ClnRoomEvents.Private, "有問題無法離開或...TODO")
+		user.NsConn.Emit(ClnRoomEvents.Private, "有問題無法離開或...TODO________________________")
 		return
 	}
 
 	//成功離開座位, 前端必須處理
-	ns.Emit(project.ClnRoomEvents.TablePrivateOnLeave, nil)
+	user.NsConn.Emit(ClnRoomEvents.TablePrivateOnLeave, nil)
 
 	//廣播已經有人上桌,前端必須處理
 	load := payloadData{
-		ProtoData:   , // TODO: 送 protobuf payload
+		ProtoData:   _________________________, // TODO: 送 protobuf payload
 		PayloadType: ProtobufType,
 	}
 
-	mr.SendPayloadsToZone([]payloadData{load}, project.ClnRoomEvents.TableOnLeave)
+	mr.SendPayloadsToZone([]payloadData{load}, ClnRoomEvents.TableOnLeave)
 }
-
 
 // PlayerJoin表示使用者要入桌入座,或離開座位
 func (mr *RoomManager) playerJoin(user *RoomUser, flag pb.SeatStatus) (zoneSeat uint8, isGameStart bool) {
@@ -540,6 +515,9 @@ func (mr *RoomManager) playerJoin(user *RoomUser, flag pb.SeatStatus) (zoneSeat 
 			   zoneSeat 若為valueNotSeat,表示 mr.players  >=4 表示遊戲人數已滿有人搶先入座
 			 離座時(SeatStatus_StandUp) zoneSeat 表示成功離座的座位
 	*/
+
+	//避免memory leak
+	atTime := pb.LocalTimestamp(time.Now())
 
 	zoneSeat = valueNotSet
 	var seatAt *tablePlayer
@@ -554,7 +532,7 @@ func (mr *RoomManager) playerJoin(user *RoomUser, flag pb.SeatStatus) (zoneSeat 
 
 				//注意用copy的
 				seatAt.player.NsConn = user.NsConn
-				seatAt.player.TicketTime = user.TicketTime /*入房間時間*/
+				seatAt.player.TicketTime = atTime /*入房間時間*/
 				seatAt.player.Name = user.Name
 
 				zoneSeat = seatAt.zone // 入座
@@ -566,9 +544,8 @@ func (mr *RoomManager) playerJoin(user *RoomUser, flag pb.SeatStatus) (zoneSeat 
 		case pb.SeatStatus_StandUp:
 			if seatAt.player.NsConn != nil && seatAt.player.NsConn == user.NsConn {
 				seatAt.player.NsConn = nil // 離座
-				seatAt.player.Play = valueNotSet
-				seatAt.player.Bid = valueNotSet
-				seatAt.player.TicketTime = time.Now()
+				seatAt.player.Play = uint32(valueNotSet)
+				seatAt.player.Bid = uint32(valueNotSet)
 				seatAt.player.Name = ""
 
 				zoneSeat = seatAt.zone // 離那個座
@@ -585,9 +562,9 @@ func (mr *RoomManager) playerJoin(user *RoomUser, flag pb.SeatStatus) (zoneSeat 
 
 // 儲存玩家(座位)的出牌到Ring中,因為回合比牌會從Ring中取得
 func (mr *RoomManager) savePlayerCardValue(player *RoomUser) (isSaved bool) {
-	if found, exist := mr.findPlayer(player.Zone); exist {
+	if found, exist := mr.findPlayer(uint8(player.Zone)); exist {
 		if found.player.NsConn == player.NsConn {
-			found.value = player.Play
+			found.value = uint8(player.Play)
 			return true
 		}
 	}
@@ -802,7 +779,7 @@ func (mr *RoomManager) sendDealToPlayer(deckInPlay *map[uint8]*[NumOfCardsOnePla
 		player = connections[idx]
 		if player != nil && !player.Conn.IsClosed() {
 			player.EmitBinary(
-				project.ClnRoomEvents.GamePrivateDeal,
+				ClnRoomEvents.GamePrivateDeal,
 				(*deckInPlay)[playerSeats[idx]][:])
 		} else {
 			//TODO 其中有一個玩家斷線,就停止遊戲,並通知所有玩家, Player
@@ -816,10 +793,10 @@ func (mr *RoomManager) sendDealToZone(deckInPlay *map[uint8]*[NumOfCardsOnePlaye
 	// 4個座位player手持牌
 	eHand, sHand, wHand, nHand := (*deckInPlay)[playerSeats[0]][:], (*deckInPlay)[playerSeats[1]][:], (*deckInPlay)[playerSeats[2]][:], (*deckInPlay)[playerSeats[3]][:]
 	for i := range users {
-		users[i].EmitBinary(project.ClnRoomEvents.GameDeal, eHand)
-		users[i].EmitBinary(project.ClnRoomEvents.GameDeal, sHand)
-		users[i].EmitBinary(project.ClnRoomEvents.GameDeal, wHand)
-		users[i].EmitBinary(project.ClnRoomEvents.GameDeal, nHand)
+		users[i].EmitBinary(ClnRoomEvents.GameDeal, eHand)
+		users[i].EmitBinary(ClnRoomEvents.GameDeal, sHand)
+		users[i].EmitBinary(ClnRoomEvents.GameDeal, wHand)
+		users[i].EmitBinary(ClnRoomEvents.GameDeal, nHand)
 	}
 }
 
@@ -865,7 +842,7 @@ func (mr *RoomManager) SendPayloads(payloads []payloadData, eventName string) {
 
 	tps := &tableRequest{
 		topic:  _FindPlayer,
-		player: &RoomUser{Zone: payloads[0].Player},
+		player: &RoomUser{Zone8: payloads[0].Player}, /*[0]:第一個樣本*/
 	}
 	rep := mr.table.Probe(tps)
 	if rep.err != nil {
@@ -1034,7 +1011,7 @@ func broadcastMsg(sender *skf.NSConn, eventName, roomName string, serializedBody
 	}
 
 	msg = new(skf.Message)
-	msg.Namespace = project.RoomSpaceName
+	msg.Namespace = RoomSpaceName
 	msg.Room = roomName
 	msg.Event = eventName
 	msg.Body = serializedBody

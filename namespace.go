@@ -28,9 +28,11 @@ type (
 	}
 
 	RoomService interface {
-		userLeaveRoom(ns *skf.NSConn, m skf.Message) error
-		playerOnLeave(ns *skf.NSConn, m skf.Message) error
-		playerOnSeat(ns *skf.NSConn, m skf.Message) error
+		UserJoin(ns *skf.NSConn, m skf.Message) error
+		UserLeave(ns *skf.NSConn, m skf.Message) error
+		PlayerJoin(ns *skf.NSConn, m skf.Message) error
+		PlayerLeave(ns *skf.NSConn, m skf.Message) error
+
 		competitiveBidding(ns *skf.NSConn, m skf.Message) error
 		competitivePlaying(ns *skf.NSConn, m skf.Message) error
 		callBackStoreConnectionRole(ns *skf.NSConn, m skf.Message) error
@@ -51,16 +53,18 @@ func (smgr SpaceManager) spaceHandler(spaceName string) map[string]skf.MessageHa
 func newSpaceManager(rooms RoomService, lobby LobbyService) SpaceManager {
 
 	roomEventHandlers := map[string]skf.MessageHandlerFunc{
-		skf.OnNamespaceConnected:    rooms._OnNamespaceConnected,
-		skf.OnNamespaceDisconnect:   rooms._OnNamespaceDisconnect,
-		skf.OnRoomJoin:              rooms._OnRoomJoin,
-		skf.OnRoomJoined:            rooms._OnRoomJoined,
-		skf.OnRoomLeave:             rooms._OnRoomLeave,
-		skf.OnRoomLeft:              rooms._OnRoomLeft,
-		SrvRoomEvents.PlayerOnSeat:  rooms.playerOnSeat,
-		SrvRoomEvents.PlayerOnLeave: rooms.playerOnLeave,
-		SrvRoomEvents.UserLeaveRoom: rooms.userLeaveRoom,
-		SrvRoomEvents.UserLeaveRoom: rooms.userLeaveRoom,
+		skf.OnNamespaceConnected:  rooms._OnNamespaceConnected,
+		skf.OnNamespaceDisconnect: rooms._OnNamespaceDisconnect,
+		skf.OnRoomJoin:            rooms._OnRoomJoin,
+		skf.OnRoomJoined:          rooms._OnRoomJoined,
+		skf.OnRoomLeave:           rooms._OnRoomLeave,
+		skf.OnRoomLeft:            rooms._OnRoomLeft,
+
+		SrvRoomEvents.UserPrivateJoin:     rooms.UserJoin,
+		SrvRoomEvents.UserPrivateLeave:    rooms.UserLeave,
+		SrvRoomEvents.TablePrivateOnSeat:  rooms.PlayerJoin,
+		SrvRoomEvents.TablePrivateOnLeave: rooms.PlayerLeave,
+
 		SrvRoomEvents.GameBid:       rooms.competitiveBidding,
 		SrvRoomEvents.GamePlay:      rooms.competitivePlaying,
 		SrvRoomEvents.GameRoleStore: rooms.callBackStoreConnectionRole,
@@ -103,7 +107,7 @@ func initNamespace(pid context.Context) {
 
 	counterService = NewCounterService(&roomsCounter)
 
-	roomSpaceService = NewRoomSpaceService(pid, &rooms)
+	roomSpaceService = NewRoomSpaceService(pid, &rooms, counterService)
 
 	lobbySpaceService = NewLobbySpaceService()
 

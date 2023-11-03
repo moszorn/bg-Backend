@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"time"
 
 	"github.com/moszorn/pb"
 	"github.com/moszorn/pb/cb"
@@ -31,103 +30,110 @@ func NewRoomSpaceService(pid context.Context, rooms *map[string]*game.Game, coun
 // AllRoom 也應該實作 RoomService
 type AllRoom map[string]*game.Game // interface should be Game
 
-func (rooms AllRoom) userLeaveRoom(ns *skf.NSConn, m skf.Message) error {
-	roomLog(ns, m)
-	var (
-		srv = rooms[m.Room]
-		res = srv.UserLeaveChannel(ns)
-	)
-	if res.Err != nil {
-		ns.Emit(ClnRoomEvents.ErrorRoom, []byte(res.Err.Error()))
-		return res.Err
+// func (rooms AllRoom) (ns *skf.NSConn, m skf.Message) error
+
+func (rooms AllRoom) room(roomName string) (roomGame *game.Game, err error) {
+	var ok bool
+
+	if len(roomName) == 0 {
+		return nil, BackendError(GeneralCode, "參數不合法", nil)
 	}
 
-	msg := []byte(fmt.Sprintf("%s已離開%s房間", ns, m.Room))
-	//TODO
-	srv.BroadcastString(ns, ClnRoomEvents.UserLeaveRoom, msg)
-
-	return nil
-}
-
-func (rooms AllRoom) playerOnLeave(ns *skf.NSConn, m skf.Message) error {
-	var (
-		srv = rooms[m.Room]
-	)
-	res := srv.PlayerLeaveChannel(ns)
-	if res.Err != nil {
-		ns.Emit(ClnRoomEvents.ErrorRoom, []byte(res.Err.Error()))
-		return res.Err
+	if roomGame, ok = rooms[roomName]; ok {
+		return roomGame, nil
 	}
-	ns.Emit(ClnRoomEvents.Private, []byte("你已經離桌"))
-
-	//房間廣播
-	msg := []byte(fmt.Sprintf("%s離開%s遊戲", ns, m.Room))
-	ns.Conn.Server().Broadcast(ns, skf.Message{
-		Namespace: m.Namespace,
-		Room:      m.Room,
-		Event:     ClnRoomEvents.PlayerOnLeave,
-		Body:      msg,
-	})
-
-	srv.BroadcastString(ns, ClnRoomEvents.PlayerOnLeave, msg)
-	return nil
+	return nil, BackendError(GeneralCode, "無此房間", nil)
 }
 
-func (rooms AllRoom) playerOnSeat(ns *skf.NSConn, m skf.Message) error {
-	var (
-		srv = rooms[m.Room]
-	)
-	roomLog(ns, m)
-	status, seatAt, bidder, forbidden, err := srv.PlayerJoinChannel(ns)
+func (rooms AllRoom) enterProcess(ns *skf.NSConn, m skf.Message) (g *game.Game, u *game.RoomUser, err error) {
+	PB := pb.PlayingUser{}
+	err = pb.Unmarshal(m.Body, &PB)
 	if err != nil {
-		switch status {
-		case game.SeatFullBecauseGameStart:
-		case game.SeatGameNA:
-			// 未來 這裡發生不照預期的錯誤,所以必須記db log
-			//game.ErrUserNotFound
-			//game.ErrPlayMultipleGame
-			//game.ErrUserInPlay
+		//TODO
+		panic(err)
+	}
+
+	u = &game.RoomUser{
+		NsConn:      ns,
+		PlayingUser: PB,
+		Zone8:       uint8(PB.Zone), /*坑*/
+	}
+
+	g, err = rooms.room(m.Room)
+	if err != nil {
+		// TBC return是不是就是會斷線
+		return nil, nil, err
+	}
+	return
+}
+
+// UserJoin 必要參數使用者姓名, 區域
+func (rooms AllRoom) UserJoin(ns *skf.NSConn, m skf.Message) (er error) {
+	roomLog(ns, m)
+	g, u, er := rooms.enterProcess(ns, m)
+	if er != nil {
+		var err *BackendErr
+		if errors.As(er, &err) {
+			slog.Error("房間錯誤", slog.String("msg", err.Error()), slog.String("room", m.Room))
 		}
-		ns.Emit(ClnRoomEvents.ErrorRoom, []byte(err.Error()))
-		return err
+		return
 	}
-	//入座者發送通知 (seat uint8Seat)
-	slog.Debug("入座",
-		slog.String("connection", fmt.Sprintf("%p", ns)),
-		slog.String("座位", fmt.Sprintf("%s", game.CbSeat(seatAt))),
-		slog.String("seat(Hex)", fmt.Sprintf("0x%X", seatAt)),
-		slog.String("seat(Dec)", fmt.Sprintf("%d", seatAt)),
-		slog.String("seat>>1", fmt.Sprintf("0x%X", seatAt>>1)),
-		slog.String("status", fmt.Sprintf("%s", status)))
+	g.UserJoin(u)
+	return nil
+}
 
-	ns.Emit(ClnRoomEvents.GamePrivateOnSeat, []byte{seatAt >> 1})
-
-	// 注意
-	ns.Conn.Set(game.KeySeat, game.CbSeat(seatAt))
-
-	switch status {
-	case game.SeatGetButGameWaiting:
-		srv.BroadcastByte(ns, ClnRoomEvents.PlayerOnSeat, seatAt>>1)
-	case game.SeatGetAndStartGame:
-		//上一叫者,上一叫品
-		srv.BroadcastByte(ns, ClnRoomEvents.PlayerOnSeat, seatAt>>1)
-		srv.SendDeal()
-
-		//第一個表示上一個叫者座位(因為是首叫,所以上一個叫者為valueNotSet)
-		//第二個表示上一個叫者叫品CbBid(上一次叫品,因為是第一次叫所以叫品是valueNotSet)
-		//第三個表示下一個叫牌者
-		var payload []uint8
-		payload = append(payload, GameConst.ValueNotSet, GameConst.ValueNotSet, bidder>>1)
-
-		//延遲,是因為最後進來的前端,render速度太慢,接收到NotyBid時來不及
-		time.Sleep(time.Millisecond * 700)
-		//payload 第四個為禁叫品
-		srv.BroadcastBytes(nil, ClnRoomEvents.GameNotyBid, append(payload, forbidden...))
-
-		slog.Debug("叫牌",
-			slog.String("bidder", fmt.Sprintf("%s", game.CbSeat(bidder))),
-			slog.Any("不可叫品", forbidden[0:]))
+// UserLeave 必要參數使用者姓名, 區域
+func (rooms AllRoom) UserLeave(ns *skf.NSConn, m skf.Message) (er error) {
+	roomLog(ns, m)
+	g, u, er := rooms.enterProcess(ns, m)
+	if er != nil {
+		var err *BackendErr
+		if errors.As(er, &err) {
+			slog.Error("房間錯誤", slog.String("msg", err.Error()), slog.String("room", m.Room))
+		}
+		return
 	}
+	g.UserLeave(u)
+	return nil
+}
+
+// PlayerJoin 必要參數使用者姓名, 區域
+func (rooms AllRoom) PlayerJoin(ns *skf.NSConn, m skf.Message) (er error) {
+	roomLog(ns, m)
+	g, u, er := rooms.enterProcess(ns, m)
+	if er != nil {
+		var err *BackendErr
+		if errors.As(er, &err) {
+			slog.Error("房間錯誤", slog.String("msg", err.Error()), slog.String("room", m.Room), slog.String("zone", fmt.Sprintf("%s", game.CbSeat(u.Zone8))))
+		}
+		return
+	}
+	g.PlayerJoin(u)
+	return nil
+}
+
+// PlayerLeave 必要參數使用者姓名, 區域
+func (rooms AllRoom) PlayerLeave(ns *skf.NSConn, m skf.Message) (er error) {
+	roomLog(ns, m)
+	g, u, er := rooms.enterProcess(ns, m)
+	if er != nil {
+		var err *BackendErr
+		if errors.As(er, &err) {
+			slog.Error("房間錯誤", slog.String("msg", err.Error()), slog.String("room", m.Room), slog.String("zone", fmt.Sprintf("%s", game.CbSeat(u.Zone8))))
+		}
+		return
+	}
+	g.PlayerLeave(u)
+	return nil
+}
+
+func (rooms AllRoom) _OnRoomJoined(c *skf.NSConn, m skf.Message) error {
+	generalLog(c, m)
+	return nil
+}
+
+func (rooms AllRoom) _OnRoomLeft(c *skf.NSConn, m skf.Message) error {
+	generalLog(c, m)
 	return nil
 }
 
@@ -268,6 +274,8 @@ func (rooms AllRoom) _OnRoomJoin(c *skf.NSConn, m skf.Message) error {
 	//因此所有邏輯都放到 _OnRoomJoined Event中去執行
 	return nil
 }
+
+/*
 func (rooms AllRoom) _OnRoomJoined(c *skf.NSConn, m skf.Message) error {
 	//將加入方房間名稱存起來,在Game *Ring中或許會用到
 	//c.Conn.Set("info", struct{ roomName string }{m.Room})
@@ -293,17 +301,17 @@ func (rooms AllRoom) _OnRoomJoined(c *skf.NSConn, m skf.Message) error {
 	//c.Emit(game.ClnGameEvents.Private, []byte{0x01})
 
 	//todo 測試 EmitBinary 傳送 Proto
-	/*
-		var obj = cb.BidBoard{
-			Seat:      1972,
-			Forbidden: []uint8{0x1, 0xa, 0xc, 0x7f, 0x10, 0x5},
-		}
-		bytes, err := proto.Marshal(&obj)
-		if err != nil {
-			panic(err)
-		}
-		c.EmitBinary(game.ClnGameEvents.Private, bytes) //針對個別Connection送出 Proto
-	*/
+	//
+	//	var obj = cb.BidBoard{
+	//		Seat:      1972,
+	//		Forbidden: []uint8{0x1, 0xa, 0xc, 0x7f, 0x10, 0x5},
+	//	}
+	//	bytes, err := proto.Marshal(&obj)
+	//	if err != nil {
+	//		panic(err)
+	//	}
+	//	c.EmitBinary(game.ClnGameEvents.Private, bytes) //針對個別Connection送出 Proto
+
 
 	// TODO 只對房間廣播
 	//GR := rooms[m.Room]
@@ -317,25 +325,17 @@ func (rooms AllRoom) _OnRoomJoined(c *skf.NSConn, m skf.Message) error {
 	//GR.BroadcastString(game.ClnGameEvents.Private, []byte("歡迎加入遊戲房"))
 
 	// todo proto 👍
-	/*
-		var obj = cb.BidBoard{
-			Seat:      1972,
-			Forbidden: []uint8{0x1, 0xa, 0xc, 0x7f, 0x10, 0x5},
-		}
-		GR.BroadcastProto(game.ClnGameEvents.Private, &obj)
-	*/
+	//var obj = cb.BidBoard{
+	//	Seat:      1972,
+	//	Forbidden: []uint8{0x1, 0xa, 0xc, 0x7f, 0x10, 0x5},
+	//}
+	//GR.BroadcastProto(game.ClnGameEvents.Private, &obj)
 
 	counterService.RoomAdd(c, m.Room)
 	return nil
+} */
 
-}
-func (rooms AllRoom) _OnRoomLeave(c *skf.NSConn, m skf.Message) error {
-	roomLog(c, m)
-	// 坑: 清除的工作不要放在這,因為假如這裡發生錯誤,那_OnRoomLeft就不會執行
-
-	// 坑: 當Client不正常斷線時, 這裡的 *skf.NSConn就已經是 Closed了
-	return nil
-}
+/*
 func (rooms AllRoom) _OnRoomLeft(c *skf.NSConn, m skf.Message) error {
 	roomLog(c, m)
 	// 只對房間廣播
@@ -371,5 +371,14 @@ func (rooms AllRoom) _OnRoomLeft(c *skf.NSConn, m skf.Message) error {
 	time.Sleep(time.Millisecond * 300)
 
 	slog.Info("順利離開遊戲房間", slog.String("room🏠", m.Room))
+	return nil
+}
+*/
+
+func (rooms AllRoom) _OnRoomLeave(c *skf.NSConn, m skf.Message) error {
+	roomLog(c, m)
+	// 坑: 清除的工作不要放在這,因為假如這裡發生錯誤,那_OnRoomLeft就不會執行
+
+	// 坑: 當Client不正常斷線時, 這裡的 *skf.NSConn就已經是 Closed了
 	return nil
 }
