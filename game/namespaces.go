@@ -3,8 +3,8 @@ package game
 //go:generate stringer -type=ServerClientEnum --linecomment -output namespace.enum_strings.go
 
 const (
-	LobbySpaceName = "lobbySpace"
-	RoomSpaceName  = "cbSpace"
+	LobbySpaceName = "52.cb.lobby"
+	RoomSpaceName  = "52.cb.room"
 )
 
 type ServerClientEnum byte
@@ -35,19 +35,20 @@ type (
 		TablePrivateOnLeave string `json:"tablePrivateOnLeave,omitempty"` //Done (私人)
 		TableOnLeave        string `json:"tableOnLeave,omitempty"`        //Done (廣播)
 
-		NamespaceCommon string `json:"namespaceCommon,omitempty"`
-		Private         string `json:"private,omitempty"` //Done
-
+		Private string `json:"private,omitempty"` //Done
 		//遊戲開始發牌事件(clientEvent Only)
 		GamePrivateDeal string `json:"gamePrivateDeal,omitempty"` //Done (私人)
 		GameDeal        string `json:"gameDeal,omitempty"`        //Done (廣播)
 
+		GamePrivateNotyBid string `json:"gamePrivateNotyBid,omitempty"` //Done (私人)
+		GameNotyBid        string `json:"gameNotyBid,omitempty"`        //Done (廣播)
+
+		/* ------------------------------------------------------------------------ */
+		NamespaceCommon string `json:"namespaceCommon,omitempty"`
 		//私人訊息:玩家座位
 		GamePrivateOnSeat string `json:"gamePrivateOnSeat,omitempty"`
-
 		//競叫起叫(起叫)是一個特殊事件,前端必須特別處理,其他競叫就是一般作法 (clientEvent only)
 		GameOpenBidStart string `json:"gameOpenBidStart,omitempty"`
-
 		//競叫中
 		GameBid             string `json:"gameBid,omitempty"`
 		GamePlay            string `json:"gamePlay,omitempty"`
@@ -55,8 +56,6 @@ type (
 		GameCardsConstraint string `json:"gameCardsConstraint,omitempty"`
 
 		//通知
-		GamePrivateNotyBid     string `json:"gamePrivateNotyBid,omitempty"` //Done (私人)
-		GameNotyBid            string `json:"gameNotyBid,omitempty"`        //Done (廣播)
 		GameNotyFirstLead      string `json:"gameNotyFirstLead,omitempty"`
 		GameNotyGameReshuffle  string `json:"gameNotyGameReshuffle,omitempty"`
 		GameNotyDummy          string `json:"gameNotyDummy,omitempty"`

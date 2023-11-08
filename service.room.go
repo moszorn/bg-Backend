@@ -26,8 +26,7 @@ func NewRoomSpaceService(pid context.Context, rooms *map[string]*game.Game, coun
 	return *rooms
 }
 
-// AllRoom Key: 房間名稱/Id , Value: 房間服務
-// AllRoom 也應該實作 RoomService
+// AllRoom Key: 房間名稱/Id , Value: 房間服務, AllRoom 實作 RoomService
 type AllRoom map[string]*game.Game // interface should be Game
 
 // func (rooms AllRoom) (ns *skf.NSConn, m skf.Message) error
@@ -124,16 +123,6 @@ func (rooms AllRoom) PlayerLeave(ns *skf.NSConn, m skf.Message) (er error) {
 		return
 	}
 	g.PlayerLeave(u)
-	return nil
-}
-
-func (rooms AllRoom) _OnRoomJoined(c *skf.NSConn, m skf.Message) error {
-	generalLog(c, m)
-	return nil
-}
-
-func (rooms AllRoom) _OnRoomLeft(c *skf.NSConn, m skf.Message) error {
-	generalLog(c, m)
 	return nil
 }
 
@@ -264,14 +253,24 @@ func (rooms AllRoom) _OnNamespaceDisconnect(c *skf.NSConn, m skf.Message) error 
 	if err != nil {
 		panic(err)
 	}
-	slog.Debug("OnNamespaceDisconnect", slog.String("namespace", m.Namespace), slog.String("status", "leave all"))
-
 	return nil
 }
 func (rooms AllRoom) _OnRoomJoin(c *skf.NSConn, m skf.Message) error {
-	roomLog(c, m)
+	generalLog(c, m)
 	//這裡不要執行任何邏輯,因為假如這裡發生錯誤,就不會執行到 _OnRoomJoined
 	//因此所有邏輯都放到 _OnRoomJoined Event中去執行
+	return nil
+}
+
+func (rooms AllRoom) _OnRoomJoined(c *skf.NSConn, m skf.Message) error {
+	generalLog(c, m)
+	rooms.UserJoin(c, m)
+	return nil
+}
+
+func (rooms AllRoom) _OnRoomLeft(c *skf.NSConn, m skf.Message) error {
+	generalLog(c, m)
+	rooms.UserLeave(c, m)
 	return nil
 }
 

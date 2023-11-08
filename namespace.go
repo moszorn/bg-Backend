@@ -17,16 +17,32 @@ type (
 	// SpaceManager 有多個不同空間(Key),每個空間有其對不同事件處理機制(Value)
 	SpaceManager map[string]eventsHandler
 
-	// SpaceHandler 由 SpaceManager實作
+	// SpaceHandler interface
+	//     ⎜
+	//     ⎣ SpaceManager
+	//       ⎿ eventsHandler
+	//       ⎿ eventsHandler
+	//       ⎿ eventsHandler
 	SpaceHandler interface {
 		spaceHandler(spaceName string) map[string]skf.MessageHandlerFunc
 	}
 
+	// CounterService 站上計數服務
+	CounterService interface {
+		GetSitePlayer() *cb.LobbyNumOfs
+		LobbyAdd(*skf.NSConn)
+		LobbySub(*skf.NSConn)
+		RoomAdd(conn *skf.NSConn, roomName string)
+		RoomSub(nsConn *skf.NSConn, roomName string)
+	}
+
+	// LobbyService 代表 Lobby Space , request的入口介面
 	LobbyService interface {
 		_OnNamespaceConnected(c *skf.NSConn, m skf.Message) error
 		_OnNamespaceDisconnect(c *skf.NSConn, m skf.Message) error
 	}
 
+	// RoomService 代表 Room Space, request的入口介面
 	RoomService interface {
 		UserJoin(ns *skf.NSConn, m skf.Message) error
 		UserLeave(ns *skf.NSConn, m skf.Message) error
@@ -46,10 +62,50 @@ type (
 	}
 )
 
-func (smgr SpaceManager) spaceHandler(spaceName string) map[string]skf.MessageHandlerFunc {
-	return smgr[spaceName]
+// spaceHandler 以SpaceName找出對應的 SpaceHandler
+func (spaceHandlers SpaceManager) spaceHandler(spaceName string) map[string]skf.MessageHandlerFunc {
+	return spaceHandlers[spaceName]
 }
 
+var (
+	//未來 房間名稱改撈db
+	cbGameRooms = []string{"room0x0", "room0x1"}
+
+	counterService    CounterService // 計數
+	roomSpaceService  RoomService    // 房間
+	lobbySpaceService LobbyService   // 大廳
+	spaceManager      SpaceHandler   // 代表可取得eventsHandler
+	Namespace         skf.Namespaces // 全域Namespace用於 skf初始
+)
+
+// initNamespace 初始化Namespace (全域變數)
+func initNamespace(pid context.Context) {
+
+	// 房間與遊戲桌
+	rooms := make(map[string]*game.Game)
+	tables := make(map[string]*cb.LobbyTable)
+	// 初始 Map key
+	for idx := range cbGameRooms {
+		rooms[cbGameRooms[idx]] = nil
+		tables[cbGameRooms[idx]] = nil
+	}
+
+	counterService = NewCounterService(&tables)
+
+	roomSpaceService = NewRoomSpaceService(pid, &rooms, counterService)
+
+	lobbySpaceService = NewLobbySpaceService()
+
+	spaceManager = newSpaceManager(roomSpaceService, lobbySpaceService)
+
+	Namespace = skf.Namespaces{
+		game.LobbySpaceName: spaceManager.spaceHandler(game.LobbySpaceName),
+		game.RoomSpaceName:  spaceManager.spaceHandler(game.RoomSpaceName),
+	}
+	slog.Debug("初始化Namespace")
+}
+
+// 注入service,生成 SpaceManager
 func newSpaceManager(rooms RoomService, lobby LobbyService) SpaceManager {
 
 	roomEventHandlers := map[string]skf.MessageHandlerFunc{
@@ -60,14 +116,14 @@ func newSpaceManager(rooms RoomService, lobby LobbyService) SpaceManager {
 		skf.OnRoomLeave:           rooms._OnRoomLeave,
 		skf.OnRoomLeft:            rooms._OnRoomLeft,
 
-		SrvRoomEvents.UserPrivateJoin:     rooms.UserJoin,
-		SrvRoomEvents.UserPrivateLeave:    rooms.UserLeave,
-		SrvRoomEvents.TablePrivateOnSeat:  rooms.PlayerJoin,
-		SrvRoomEvents.TablePrivateOnLeave: rooms.PlayerLeave,
+		game.SrvRoomEvents.UserPrivateJoin:     rooms.UserJoin,
+		game.SrvRoomEvents.UserPrivateLeave:    rooms.UserLeave,
+		game.SrvRoomEvents.TablePrivateOnSeat:  rooms.PlayerJoin,
+		game.SrvRoomEvents.TablePrivateOnLeave: rooms.PlayerLeave,
 
-		SrvRoomEvents.GameBid:       rooms.competitiveBidding,
-		SrvRoomEvents.GamePlay:      rooms.competitivePlaying,
-		SrvRoomEvents.GameRoleStore: rooms.callBackStoreConnectionRole,
+		//game.SrvRoomEvents.GameBid:       rooms.competitiveBidding,
+		//game.SrvRoomEvents.GamePlay:      rooms.competitivePlaying,
+		//game.SrvRoomEvents.GameRoleStore: rooms.callBackStoreConnectionRole,
 	}
 
 	lobbyEventHandlers := map[string]skf.MessageHandlerFunc{
@@ -76,46 +132,8 @@ func newSpaceManager(rooms RoomService, lobby LobbyService) SpaceManager {
 	}
 
 	mg := map[string]eventsHandler{
-		RoomSpaceName:  roomEventHandlers,
-		LobbySpaceName: lobbyEventHandlers,
+		game.RoomSpaceName:  roomEventHandlers,
+		game.LobbySpaceName: lobbyEventHandlers,
 	}
-
 	return mg
-}
-
-var (
-	//未來 房間名稱改撈db
-	cbRooms = []string{"room1", "room2"}
-
-	counterService    CounterService
-	roomSpaceService  RoomService
-	lobbySpaceService LobbyService
-	spaceManager      SpaceHandler
-	Namespace         skf.Namespaces
-)
-
-// 初始化Namespace
-func initNamespace(pid context.Context) {
-
-	rooms := make(map[string]*game.Game)
-	roomsCounter := make(map[string]*cb.LobbyTable)
-
-	for idx := range cbRooms {
-		rooms[cbRooms[idx]] = nil
-		roomsCounter[cbRooms[idx]] = nil
-	}
-
-	counterService = NewCounterService(&roomsCounter)
-
-	roomSpaceService = NewRoomSpaceService(pid, &rooms, counterService)
-
-	lobbySpaceService = NewLobbySpaceService()
-
-	spaceManager = newSpaceManager(roomSpaceService, lobbySpaceService)
-
-	Namespace = skf.Namespaces{
-		"52.cb.lobby": spaceManager.spaceHandler(LobbySpaceName),
-		"52.cb.room":  spaceManager.spaceHandler(RoomSpaceName),
-	}
-	slog.Debug("初始化Namespace")
 }

@@ -429,7 +429,7 @@ func (mr *RoomManager) PlayerJoin(user *RoomUser) {
 
 	// 廣播已經有人上桌,前端必須處理
 	load := payloadData{
-		ProtoData:   ______________________________________, // TODO: 送 protobuf payload
+		ProtoData:   nil, // ______________________________________, // TODO: 送 protobuf payload
 		PayloadType: ProtobufType,
 	}
 
@@ -489,7 +489,7 @@ func (mr *RoomManager) PlayerLeave(user *RoomUser) {
 		//ns.Emit(skf.OnRoomJoined, nil)
 		//紀錄 Log
 		// 告訴玩家你已經上桌,前端必須處理
-		user.NsConn.Emit(ClnRoomEvents.Private, "有問題無法離開或...TODO________________________")
+		user.NsConn.Emit(ClnRoomEvents.Private, nil)
 		return
 	}
 
@@ -498,7 +498,7 @@ func (mr *RoomManager) PlayerLeave(user *RoomUser) {
 
 	//廣播已經有人上桌,前端必須處理
 	load := payloadData{
-		ProtoData:   _________________________, // TODO: 送 protobuf payload
+		ProtoData:   nil, //   _________________________, // TODO: 送 protobuf payload
 		PayloadType: ProtobufType,
 	}
 

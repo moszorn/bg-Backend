@@ -5,9 +5,7 @@ import (
 	"time"
 )
 
-var "未完成"
-
-func randomSeat() uint8 {}
+func randomSeat() uint8 { return valueNotSet }
 
 type Engine struct {
 	locker sync.RWMutex
@@ -74,14 +72,14 @@ func (egn *Engine) GetNextBid(nowSeat, nowValue, raw8 uint8) (bidder uint8, next
 	return 0, nil, false
 }
 
-func (egn *Engine) playOrder(eastCard, southCard, westCard, northCard uint8) (first uint8, flowers [3]uint8) {
-}
-func (egn *Engine) playResultInTrump(eastCard, southCard, westcard, northCard uint8) (winner uint8) {}
-func (egn *Engine) playResultInSuit(eastCard, southCard, westCard, northCard uint8) (winner uint8)  {}
+//func (egn *Engine) playOrder(eastCard, southCard, westCard, northCard uint8) (first uint8, flowers [3]uint8) { }
+//func (egn *Engine) playResultInTrump(eastCard, southCard, westcard, northCard uint8) (winner uint8) {}
+//func (egn *Engine) playResultInSuit(eastCard, southCard, westCard, northCard uint8) (winner uint8)  {}
 
 func (egn *Engine) getGameFirstLead(finalPassSeat uint8) (leadSeat, declarerSeat, dummySeat, trumpSuit uint8) {
 	return 0, 0, 0, 0
 }
-func (egn *Engine) isPassBid(value8 uint8) bool                                       {}
+
+// func (egn *Engine) isPassBid(value8 uint8) bool                                       {}
 func (egn *Engine) GetPlayResult(firstPlay, play2, play3, play4 uint8) (winner uint8) { return 0 }
 func (egn *Engine) GetGameResult()                                                    {}

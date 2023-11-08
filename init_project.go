@@ -23,11 +23,8 @@ var (
 	}
 
 	roomLog = func(c *skf.NSConn, msg skf.Message) {
-		slog.Debug("🏠",
-			slog.String("room", msg.Room),
-			slog.String("connId", shortConnID(c)),
-			slog.String("event", msg.Event),
-		)
+		logFmt := fmt.Sprintf("%s/%s/%s", msg.Room, msg.Event, shortConnID(c))
+		slog.Debug("🏠房間日誌", slog.String("", logFmt))
 	}
 
 	generalLog = func(c *skf.NSConn, msg skf.Message) {
@@ -38,7 +35,7 @@ var (
 			event     string = "空值"
 		)
 
-		shotId := fmt.Sprintf("( %s )", shortConnID(c))
+		shotId := fmt.Sprintf("%s", shortConnID(c))
 		if msg.Namespace != "" {
 			namespace = msg.Namespace
 		}
@@ -49,14 +46,12 @@ var (
 			event = msg.Event
 		}
 
-		slog.Debug("一般日誌",
-			slog.String("space", namespace),
-			slog.String("event", event),
-			slog.String("room", room),
-			slog.String("connId", shotId))
+		logFmt := fmt.Sprintf("%s/%s/%s/%s", namespace, room, event, shotId)
+
+		slog.Debug("space日誌", slog.String("", logFmt))
 
 		if 0 < len(msg.Body) {
-			slog.Debug("一般日誌", slog.String("Body", string(msg.Body)))
+			slog.Debug("space日誌", slog.String("Body", string(msg.Body)))
 		}
 		slog.Debug("⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺ ")
 	}

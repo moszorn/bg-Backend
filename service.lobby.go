@@ -8,15 +8,8 @@ import (
 	"github.com/moszorn/pb"
 	"github.com/moszorn/pb/cb"
 	"github.com/moszorn/utils/skf"
+	"project/game"
 )
-
-type CounterService interface {
-	GetSitePlayer() *cb.LobbyNumOfs
-	LobbyAdd(*skf.NSConn)
-	LobbySub(*skf.NSConn)
-	RoomAdd(conn *skf.NSConn, roomName string)
-	RoomSub(nsConn *skf.NSConn, roomName string)
-}
 
 type BridgeGameLobby struct {
 	wo     *waitOnce   //專用設定 BridgeGameLobby.server
@@ -47,11 +40,11 @@ func (app *BridgeGameLobby) chanLoop() {
 			slog.Debug("廣播房間人數", slog.Int("roomId", int(arg.roomNumOfs.Id)), slog.String("room", arg.roomNumOfs.Name), slog.Int("人數", int(arg.roomNumOfs.Joiner)))
 
 			msg := skf.Message{
-				Namespace: LobbySpaceName,
+				Namespace: game.LobbySpaceName,
 				SetBinary: true,
 			}
 
-			msg.Event = ClnLobbyEvents.NumOfUsersInRoom
+			msg.Event = game.ClnLobbyEvents.NumOfUsersInRoom
 			//送出 cb.LobbyTable
 			msg.Body, _ = pb.Marshal(arg.roomNumOfs)
 
@@ -62,10 +55,10 @@ func (app *BridgeGameLobby) chanLoop() {
 			slog.Debug("廣播大廳人數", slog.Int("lobby", int(arg.lobbyNumOfs.Joiner)))
 
 			msg := skf.Message{
-				Namespace: LobbySpaceName,
+				Namespace: game.LobbySpaceName,
 				SetBinary: true,
 			}
-			msg.Event = ClnLobbyEvents.NumOfUsersOnSite
+			msg.Event = game.ClnLobbyEvents.NumOfUsersOnSite
 			//送出 cb.LobbyNumOfs
 			msg.Body, _ = pb.Marshal(arg.lobbyNumOfs)
 			app.server.Broadcast(arg.nsConn, msg)
@@ -94,7 +87,7 @@ func (app *BridgeGameLobby) _OnceForServer(c *skf.NSConn) {
 }
 
 func (app *BridgeGameLobby) _OnNamespaceConnected(c *skf.NSConn, m skf.Message) error {
-	slog.Debug("Lobby", slog.String("status", m.Namespace))
+	generalLog(c, m)
 
 	//只有第一個Request時才會有效執行
 	app._OnceForServer(c)
@@ -113,14 +106,13 @@ func (app *BridgeGameLobby) _OnNamespaceConnected(c *skf.NSConn, m skf.Message) 
 	slog.Debug("Lobby", slog.Int("大廳桌數", len(l.Tables)), slog.Int("大廳人數", int(l.Joiner)))
 
 	marshal, _ := pb.Marshal(l)
-	c.EmitBinary(ClnLobbyEvents.NumOfRooms, marshal)
+	c.EmitBinary(game.ClnLobbyEvents.NumOfRooms, marshal)
 
 	return nil
 }
 
 func (app *BridgeGameLobby) _OnNamespaceDisconnect(c *skf.NSConn, m skf.Message) error {
-	//log(c, m)
-	slog.Debug("Lobby", slog.String("status", m.Namespace))
+	generalLog(c, m)
 
 	app.counter.LobbySub(c)
 

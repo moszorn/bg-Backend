@@ -25,7 +25,7 @@ import (
 
 var (
 	//Inject from Makefile (listen port)
-	endPort string
+	endPort string = ":10923"
 
 	pid    = strconv.Itoa(os.Getpid())
 	cpuNum = runtime.NumCPU()
@@ -44,6 +44,7 @@ func main() {
 	ctrl := make(chan os.Signal)
 	signal.Notify(ctrl, os.Kill, os.Interrupt)
 
+	// 初始Namespace,使得skf可以被生成
 	project.InitProject(ctx)
 
 	go gameServerStart()
@@ -72,7 +73,7 @@ func gameServerStart() {
 	//定時跑馬燈
 	//go periodMarquee(server)
 
-	slog.Info("Contract Bridge Game", slog.String("pid", pid))
+	slog.Info("Contract Bridge Game", slog.String("pid", pid), slog.String("port", endPort))
 	slog.Debug("Ctrl-C中斷Server執行")
 	err := http.ListenAndServe(endPort, server)
 	if err != nil {
