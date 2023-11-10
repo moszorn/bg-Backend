@@ -8,6 +8,9 @@ import (
 	"log/slog"
 	"time"
 
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/anypb"
+
 	"github.com/moszorn/pb"
 	utilog "github.com/moszorn/utils/log"
 	"github.com/moszorn/utils/rchanr"
@@ -37,7 +40,9 @@ type (
 		n *RoomUser //north 玩家
 
 		// 代表所有Zone的觀眾連線資料結構,不含Player連線
-		zoneUsers []*skf.NSConn
+		audiences Audiences
+		// 代表以空位為始點的環形元素陣列
+		seatOrders [4]*RoomUser
 
 		//代表一個玩家的連線
 		player *skf.NSConn
@@ -114,10 +119,11 @@ func newRoomManager(shutdown context.Context) *RoomManager {
 			zone: playerSeats[i],
 			player: &RoomUser{
 				NsConn:      nil,
-				PlayingUser: pb.PlayingUser{Zone: uint32(valueNotSet)},
-				Zone8:       valueNotSet,
+				PlayingUser: pb.PlayingUser{Zone: uint32(playerSeats[i])},
+				Zone8:       playerSeats[i],
 			}, /*player一經初始化後永不銷毀*/
 		}
+		r = r.Next()
 	}
 	var mr *RoomManager = new(RoomManager)
 	mr.shutdown = shutdown
@@ -230,9 +236,9 @@ func (mr *RoomManager) Start() {
 			case SeatShift:
 				result := chanResult{}
 				result.seat = mr.seatShift(req.shiftSeat)
-				result.err = nil
 				result.isGameStart = mr.players >= 4
 				result.aa = mr.aa
+				result.err = nil
 				crwa.Response <- result
 
 			case PlayerAction:
@@ -267,15 +273,14 @@ func (mr *RoomManager) Start() {
 
 				mr.aa++
 				result.seat = req.player.Zone8
-				result.err = nil
 				result.aa = mr.aa
+				result.err = nil
 				crwa.Response <- result
 			case _FindPlayer:
 
 				result := chanResult{}
 				result.isGameStart = mr.players >= 4
 				result.aa = mr.aa
-				result.err = nil
 
 				var ringItem *tablePlayer
 				ringItem, result.isOnSeat = mr.findPlayer(req.player.Zone8)
@@ -284,6 +289,7 @@ func (mr *RoomManager) Start() {
 					//找到指定玩家連線
 					result.player = ringItem.player.NsConn
 				}
+				result.err = nil
 				crwa.Response <- result
 
 			case _GetTablePlayers:
@@ -294,11 +300,19 @@ func (mr *RoomManager) Start() {
 			case _GetZoneUsers:
 				//撈取 Player Block連線
 				result := chanResult{}
+				result.aa = mr.aa
+				result.isGameStart = mr.players >= 4
+				result.audiences, result.e, result.s, result.w, result.n = mr.zoneUsers()
+				result.err = nil
+				crwa.Response <- result
+			case _GetTableInfo:
+				result := chanResult{}
+				result.seatOrders = mr.lastLeaveOrder()
+				result.audiences, _, _, _, _ = mr.zoneUsers()
 				result.err = nil
 				result.aa = mr.aa
 				result.isGameStart = mr.players >= 4
-				result.zoneUsers, result.e, result.s, result.w, result.n = mr.zoneUsers()
-
+				crwa.Response <- result
 			} /*eofSwitch*/
 
 		case send := <-mr.broadcastMsg:
@@ -328,6 +342,45 @@ func (mr *RoomManager) getZoneRoomUser(nsconn *skf.NSConn, zone uint8) (found *R
 	return
 }
 
+// RoomInfo 房間人數,座位狀態,(TODO) 桌面遊戲狀態; 使用者進入房間時需要此資訊
+func (mr *RoomManager) RoomInfo(user *RoomUser) {
+	//桌中座位順序  seatPlays
+	//玩家名稱人數
+	//當前桌面狀況
+
+	tqs := &tableRequest{
+		topic: _GetTableInfo,
+	}
+
+	rep := mr.table.Probe(tqs)
+	if rep.err != nil {
+		slog.Error("取得RoomInfo錯誤", utilog.Err(rep.err))
+	}
+
+	var pp pb.TableInfo = pb.TableInfo{}
+
+	//有順序的四個座位資訊(從第一個空位開始)
+	pp.Players = make([]*pb.PlayingUser, 0, PlayersLimit)
+	for i := range rep.seatOrders {
+		pp.Players = append(pp.Players, &rep.seatOrders[i].PlayingUser)
+	}
+
+	//觀眾資訊
+	pp.Audiences = make([]*pb.PlayingUser, 0, len(rep.audiences))
+	for i := range rep.audiences {
+		pp.Audiences = append(pp.Audiences, &rep.audiences[i].PlayingUser)
+	}
+
+	payload := payloadData{
+		ProtoData:   &pp,
+		PayloadType: ProtobufType,
+	}
+
+	if err := mr.send(user.NsConn, payload, ClnRoomEvents.UserPrivateTableInfo); err != nil {
+		slog.Error("RoomInfo proto錯誤", utilog.Err(err))
+	}
+}
+
 // UserJoin 使用者進入房間, 必須參數RoomUser {*skf.NSConn, userName, userZone}
 func (mr *RoomManager) UserJoin(user *RoomUser) {
 
@@ -354,11 +407,13 @@ func (mr *RoomManager) UserJoin(user *RoomUser) {
 		return
 	}
 
-	mr.g.counterAdd(user.NsConn, mr.g.name)
+	mr.g.CounterAdd(user.NsConn, mr.g.name)
 
 	//告知client 切換到房間
 	//ns.Emit(project.ClnRoomEvents.Private, []byte("你已經入房"))
 	//ns.Emit(skf.OnRoomJoined, nil)
+
+	mr.RoomInfo(user)
 
 	//TODO 廣播有人進入房間
 }
@@ -384,7 +439,8 @@ func (mr *RoomManager) UserLeave(user *RoomUser) {
 		return
 	}
 
-	mr.g.counterSub(user.NsConn, mr.g.name)
+	//移到 NamespaceDisconnected
+	mr.g.CounterSub(user.NsConn, mr.g.name)
 
 	//告知client切換回大廳
 	user.NsConn.Emit(skf.OnRoomLeft, nil)
@@ -549,6 +605,8 @@ func (mr *RoomManager) playerJoin(user *RoomUser, flag pb.SeatStatus) (zoneSeat 
 				seatAt.player.Name = ""
 
 				zoneSeat = seatAt.zone // 離那個座
+				seatAt.player.Zone = uint32(valueNotSet)
+
 				user.Tracking = EnterRoom
 				mr.players--
 				//回傳的zoneSeat不可能是 0x0
@@ -636,14 +694,15 @@ func (mr *RoomManager) zoneUsersByMap() (users map[uint8][]*skf.NSConn, ePlayer,
 }
 
 // 區域連線
-func (mr *RoomManager) zoneUsers() (users []*skf.NSConn, ePlayer, sPlayer, wPlayer, nPlayer *RoomUser) {
+// zoneUsers 回傳觀眾,與四位玩家(ns可能 nil)
+func (mr *RoomManager) zoneUsers() (users []*RoomUser, ePlayer, sPlayer, wPlayer, nPlayer *RoomUser) {
 	// users 表示所有觀眾使用者連線, 東南西北玩家(player)分別是 ePlayer, sPlayer, wPlayer, nPlayer
 
 	//玩家連線
 	ePlayer, sPlayer, wPlayer, nPlayer = mr.tablePlayers()
 
 	//觀眾連線
-	users = make([]*skf.NSConn, 0, len(mr.Users)-4) //-4 扣除四位玩家
+	users = make([]*RoomUser, 0, len(mr.Users)-4) //-4 扣除四位玩家
 
 	var (
 		player *skf.NSConn
@@ -661,9 +720,9 @@ func (mr *RoomManager) zoneUsers() (users []*skf.NSConn, ePlayer, sPlayer, wPlay
 		case north:
 			player = nPlayer.NsConn
 		}
-		for conn := range mr.Users[zone] {
+		for conn, roomUser := range mr.Users[zone] {
 			if !conn.Conn.IsClosed() && conn != player {
-				users = append(users, conn)
+				users = append(users, roomUser)
 			}
 		}
 	}
@@ -686,6 +745,33 @@ func (mr *RoomManager) tablePlayers() (e, s, w, n *RoomUser) {
 		}
 	})
 	return
+}
+
+// 回傳以第一個空位為始點的環形陣列,order 第一個元素就是空位的seat,用於使用者進入房間的位置方位
+func (mr *RoomManager) lastLeaveOrder() (order [4]*RoomUser) {
+	var limit = PlayersLimit
+	order = [PlayersLimit]*RoomUser{}
+
+	var table *tablePlayer = mr.Value.(*tablePlayer)
+
+	//先找出第一個空位發生處,並移動環型結構,直到找到break
+	for limit > 0 {
+		limit--
+		//空位條件 Name=="" , connection == nil
+		if table.player.Name == "" && table.player.NsConn == nil {
+			break
+		}
+		mr.Ring = mr.Next()
+		table = mr.Value.(*tablePlayer)
+	}
+
+	//此時環形會是以第一個找到的空位為始點
+	i := 0
+	mr.Do(func(seat any) {
+		order[i] = (seat.(*tablePlayer)).player
+		i++
+	})
+	return //最後離座順序
 }
 
 // PlayersCardValue 撈取四位玩家打出的牌, 回傳的順序固定為 e(east), s(south), w(west), n(north)
@@ -800,7 +886,7 @@ func (mr *RoomManager) sendDealToZone(deckInPlay *map[uint8]*[NumOfCardsOnePlaye
 	}
 }
 
-// SendDeal 向玩家, 觀眾(Player)發牌
+// SendDeal 向玩家, 觀眾(Player)發牌, 送出 bytes
 func (mr *RoomManager) SendDeal(deckInPlay *map[uint8]*[NumOfCardsOnePlayer]uint8) {
 	tqs := &tableRequest{
 		topic: _GetZoneUsers,
@@ -814,7 +900,7 @@ func (mr *RoomManager) SendDeal(deckInPlay *map[uint8]*[NumOfCardsOnePlayer]uint
 	mr.sendDealToPlayer(deckInPlay, rep.e.NsConn, rep.s.NsConn, rep.w.NsConn, rep.n.NsConn)
 
 	//觀眾發牌
-	mr.sendDealToZone(deckInPlay, rep.zoneUsers)
+	mr.sendDealToZone(deckInPlay, rep.audiences.Connections())
 }
 
 // send 針對payload型態對連線發送 []byte 或 proto bytes
@@ -837,8 +923,12 @@ func (mr *RoomManager) send(nsConn *skf.NSConn, payload payloadData, eventName s
 	return nil
 }
 
-// SendPayloads 針對某個Player發送多筆訊息,或一筆訊息
-func (mr *RoomManager) SendPayloads(payloads []payloadData, eventName string) {
+// SendPayloads 針對某個Player(玩家)發送多筆訊息,或一筆訊息
+func (mr *RoomManager) SendPayloads(eventName string, payloads ...payloadData) {
+
+	if len(payloads) == 0 {
+		panic("SendPayloads 屬性player必須要有值(seat)")
+	}
 
 	tps := &tableRequest{
 		topic:  _FindPlayer,
@@ -915,9 +1005,12 @@ func (mr *RoomManager) SendPayloadsToZone(payloads []payloadData, eventName stri
 	}
 
 	var err error
-	for i := range rep.zoneUsers {
+
+	connections := rep.audiences.Connections()
+
+	for i := range connections {
 		for j := range payloads {
-			if err = mr.send(rep.zoneUsers[i], payloads[j], eventName); err != nil {
+			if err = mr.send(connections[i], payloads[j], eventName); err != nil {
 				slog.Error("payload發送失敗(SendPayloadsToZone)", utilog.Err(err))
 			}
 		}
@@ -929,7 +1022,7 @@ func (mr *RoomManager) SendPayloadsToZone(payloads []payloadData, eventName stri
                                SendXXXX 指資訊個別的送出給玩家,觀眾通常用於遊戲資訊
 ======================== ====================================================================== */
 
-func (mr *RoomManager) roomInfo() {
+func (mr *RoomManager) roomDebugDump() {
 	//Total: 每個Zone人數相加
 	eastZone := len(mr.Users[playerSeats[0]])
 	southZone := len(mr.Users[playerSeats[1]])
@@ -949,7 +1042,7 @@ func (mr *RoomManager) broadcast(b *broadcastRequest) (err AppErr) {
 
 	isSkip := b.sender != nil && !b.sender.Conn.IsClosed()
 
-	var appErr = AppErr{Code: AppCodeZero}
+	var appErr = AppErr{Code: AppCodeZero} //設定初值(zero value)
 
 	//失敗送出的使用者(含觀眾與玩家)
 	fails := make([]*RoomUser, 0, RoomUsersLimit)
@@ -974,7 +1067,7 @@ func (mr *RoomManager) broadcast(b *broadcastRequest) (err AppErr) {
 				appErr.Code = BroadcastC
 				continue
 			}
-
+			// 寫出
 			if ok := Ns.Conn.Write(*b.msg); !ok {
 				//紀錄失敗送出, 並處理這個 user
 				//TODO
@@ -1061,7 +1154,7 @@ func (mr *RoomManager) BroadcastString(eventName, roomName string, body string) 
 }
 
 // BroadcastProtobuf 發送protobuf 給所有人
-func (mr *RoomManager) BroadcastProtobuf(eventName, roomName string, body pb.Message) {
+func (mr *RoomManager) BroadcastProtobuf(eventName, roomName string, body proto.Message) {
 	marshal, err := pb.Marshal(body)
 	if err != nil {
 		slog.Error("ProtoMarshal(BroadcastProtobuf)", utilog.Err(err))
@@ -1072,6 +1165,57 @@ func (mr *RoomManager) BroadcastProtobuf(eventName, roomName string, body pb.Mes
 		msg: broadcastMsg(nil, eventName, roomName, marshal, nil),
 	}
 	checkBroadcastError(mr.broadcastMsg.Probe(b), "BroadcastProtobuf")
+}
+
+func (mr *RoomManager) PlayGroundForPayload(user *RoomUser) {
+	fmt.Println("[PlayGroundForPayload]")
+	eventName := ClnRoomEvents.DevelopPrivatePayloadTest
+
+	p := payloadData{}
+	//case1 byte ,前端判斷 msg.value 只要不為null, 就可取出byte值
+	p.PayloadType = ByteType
+	p.Data = []byte{east}
+	p.Player = east
+	p.ProtoData = nil
+	mr.send(user.NsConn, p, eventName) // 👍
+
+	//case2 bytes ,前端判斷 msg.values 只要不為null, 就可取出bytes值
+	/*	p.PayloadType = ByteType
+		p.PayloadType = ByteType
+		p.Data = append(p.Data, south, west, north)
+		p.Player = east
+		p.ProtoData = nil
+		mr.send(user.NsConn, p, eventName)
+	*/
+	//case3 proto ,前端判斷 msg.pbody只要不為null, 就可取出pbody(protobuf)值
+	p.PayloadType = ProtobufType
+	message := pb.MessagePacket{
+		Type:    pb.MessagePacket_Admin,
+		Content: "hello MessagePacket",
+		Tt:      pb.LocalTimestamp(time.Now()),
+		RoomId:  12,
+		From:    "Server",
+		To:      "Client",
+	}
+	anyItem, err := anypb.New(&message)
+	if err != nil {
+		panic(err)
+	}
+
+	packet := pb.ProtoPacket{
+		AnyItem: anyItem,
+		Tt:      pb.LocalTimestamp(time.Now()),
+		Topic:   pb.TopicType_Message,
+		SN:      99,
+	}
+	p.ProtoData = &packet
+	mr.send(user.NsConn, p, eventName) // 👍
+
+	//case4 String ,前端判斷 msg.body只要不為null, 就可取出string值
+	p.PayloadType = ByteType
+	p.Data = p.Data[:]
+	p.Data = []uint8("人間にんげん")
+	mr.send(user.NsConn, p, eventName) // 👍
 }
 
 // 檢驗BroadcastXXXX後的結果,並log錯誤

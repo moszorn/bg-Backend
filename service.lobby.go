@@ -87,7 +87,7 @@ func (app *BridgeGameLobby) _OnceForServer(c *skf.NSConn) {
 }
 
 func (app *BridgeGameLobby) _OnNamespaceConnected(c *skf.NSConn, m skf.Message) error {
-	generalLog(c, m)
+	//generalLog(c, m)
 
 	//只有第一個Request時才會有效執行
 	app._OnceForServer(c)
@@ -103,7 +103,7 @@ func (app *BridgeGameLobby) _OnNamespaceConnected(c *skf.NSConn, m skf.Message) 
 	var l *cb.LobbyNumOfs
 	l = app.counter.GetSitePlayer()
 
-	slog.Debug("Lobby", slog.Int("大廳桌數", len(l.Tables)), slog.Int("大廳人數", int(l.Joiner)))
+	slog.Debug("Lobby", slog.Int("大廳桌數", len(l.Tables)), slog.Int("大廳人數", int(l.Joiner)), slog.Int("total", int(l.Total)))
 
 	marshal, _ := pb.Marshal(l)
 	c.EmitBinary(game.ClnLobbyEvents.NumOfRooms, marshal)
@@ -122,8 +122,6 @@ func (app *BridgeGameLobby) _OnNamespaceDisconnect(c *skf.NSConn, m skf.Message)
 	if err != nil {
 		panic(err)
 	}
-
-	slog.Debug("Lobby", slog.String("status", "leave all"))
 
 	return nil
 }

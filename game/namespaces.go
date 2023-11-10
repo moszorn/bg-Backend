@@ -24,10 +24,12 @@ type (
 
 	// 屬性名稱是PrivateXxxx表示是通知個人私人訊號否則是大眾廣播訊號
 	roomNamespace struct {
-		UserPrivateJoin  string `json:"userJoinRoom,omitempty"`  //Done (私人)
-		UserJoin         string `json:"userJoinRoom,omitempty"`  //Done (廣播)
-		UserPrivateLeave string `json:"userLeaveRoom,omitempty"` //Done (私人)
-		UserLeave        string `json:"userLeaveRoom,omitempty"` //Done (廣播)
+		UserPrivateTableInfo string `json:"userPrivateTableInfo,omitempty"`
+		UserPrivateJoin      string `json:"userPrivateJoin,omitempty"` //Done (私人)
+		UserJoin             string `json:"userJoin,omitempty"`        //Done (廣播)
+
+		UserPrivateLeave string `json:"userPrivateLeave,omitempty"` //Done (私人)
+		UserLeave        string `json:"userLeave,omitempty"`        //Done (廣播)
 
 		TablePrivateOnSeat string `json:"tablePrivateOnSeat,omitempty"` //Done (私人)
 		TableOnSeat        string `json:"tableOnSeat,omitempty"`        //Done (廣播)
@@ -43,6 +45,8 @@ type (
 		GamePrivateNotyBid string `json:"gamePrivateNotyBid,omitempty"` //Done (私人)
 		GameNotyBid        string `json:"gameNotyBid,omitempty"`        //Done (廣播)
 
+		DevelopPrivatePayloadTest string `json:"developPrivatePayloadTest,omitempty"` //Done (私人)
+		DevelopPayloadTest        string `json:"developPayloadTest,omitempty"`        //Done (廣播)
 		/* ------------------------------------------------------------------------ */
 		NamespaceCommon string `json:"namespaceCommon,omitempty"`
 		//私人訊息:玩家座位
@@ -86,10 +90,10 @@ var (
 
 	// server回覆Client時要註明哪一個Client Event handler為接收
 	clientLobbySpace = &lobbyNamespace{
-		NumOfUsers:       "default.numOfUsers",
-		NumOfRooms:       "default.numOfRooms",
-		NumOfUsersInRoom: "default.numOfUsersInRoom",
-		NumOfUsersOnSite: "default.allUsers",
+		NumOfUsers:       "d.numOfUsers",
+		NumOfRooms:       "d.numOfRooms",
+		NumOfUsersInRoom: "d.numOfUsersInRoom",
+		NumOfUsersOnSite: "d.allUsers",
 	}
 
 	lobbySpaceEvents = map[ServerClientEnum]*lobbyNamespace{
@@ -103,10 +107,10 @@ var (
 	/*************** GameNamespace setting *******************************/
 	//client -> server
 	serverRoomSpace = &roomNamespace{
-		UserPrivateJoin:     "UserPrivateJoin",     //Done
-		UserPrivateLeave:    "UserPrivateLeave",    //Done
-		TablePrivateOnLeave: "TablePrivateOnLeave", //Done
-		TablePrivateOnSeat:  "TablePrivateOnSeat",  //Done
+		UserPrivateJoin:     "upj",  //Done
+		UserPrivateLeave:    "upl",  //Done
+		TablePrivateOnLeave: "tpol", //Done
+		TablePrivateOnSeat:  "tpos", //Done
 
 		NamespaceCommon: "cb.common",
 		GameBid:         "game.bid",
@@ -115,18 +119,21 @@ var (
 	}
 	// server -> client
 	clientRoomSpace = &roomNamespace{
-		UserJoin:            "UserJoin",
-		UserLeave:           "UserLeave",
-		NamespaceCommon:     "cb.common",
-		TableOnLeave:        "table.leave",     //Done
-		TablePrivateOnLeave: "table.p.leave",   //Done
-		TableOnSeat:         "table.seat",      //Done
-		TablePrivateOnSeat:  "table.p.seat",    //Done
-		Private:             "private",         // Done
-		GamePrivateDeal:     "game.p.deal",     //Done
-		GameDeal:            "game.deal",       //Done
-		GameNotyBid:         "game.noty.bid",   // Done
-		GamePrivateNotyBid:  "game.p.noty.bid", //Done
+		UserPrivateTableInfo:      "upti",
+		UserJoin:                  "uj",
+		UserLeave:                 "ul",
+		NamespaceCommon:           "cb.common",
+		TableOnLeave:              "tol",     //Done
+		TablePrivateOnLeave:       "tpol",    //Done
+		TableOnSeat:               "tos",     //Done
+		TablePrivateOnSeat:        "tpos",    //Done
+		Private:                   "private", // Done
+		GamePrivateDeal:           "gpd",     //Done
+		GameDeal:                  "gd",      //Done
+		GameNotyBid:               "gnb",     // Done
+		GamePrivateNotyBid:        "gpnb",    //Done
+		DevelopPayloadTest:        "dpt",     //Done
+		DevelopPrivatePayloadTest: "dppt",    //Done
 
 		GamePrivateOnSeat:        "game.start.seat",
 		GameOpenBidStart:         "game.start.bid",
@@ -143,9 +150,9 @@ var (
 		GameCardsConstraint:      "game.constraint.cards",
 		GameNotyShowDeclarerHand: "game.noty.declarer",
 		GameNotyClearGameTable:   "game.noty.cln.table",
-		ErrorSpace:               "err.space",
-		ErrorRoom:                "err.room",
-		ErrorGame:                "err.game",
+		ErrorSpace:               "e.space",
+		ErrorRoom:                "e.room",
+		ErrorGame:                "e.game",
 	}
 
 	// Game 命名空間

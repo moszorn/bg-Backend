@@ -69,6 +69,19 @@ const (
 	Dummy                    // 🙇🏼
 )
 
+// _e:east _s:south _w:west _n:north, enum CbSeat
+const (
+	east  uint8 = 0x0      //0x00
+	south uint8 = 0x1 << 6 //0x40
+	west  uint8 = 0x2 << 6 //0x80
+	north uint8 = 0x3 << 6 //0xC0
+
+	CbEast  = CbSeat(east)  //東家
+	CbSouth = CbSeat(south) //南家
+	CbWest  = CbSeat(west)  //西家
+	CbNorth = CbSeat(north) //北家
+)
+
 // 儲存叫牌過程中最後由哪一方叫到王
 // 參考 biduint8.go - rawBidSuitMapper
 // 參考 gamengines.go - cacheBidHistories
@@ -230,23 +243,10 @@ const (
 	Db7x2                  //7線✗✘
 )
 
-// _e:east _s:south _w:west _n:north, enum CbSeat
-const (
-	// << 左移表示2次方
-	_e      = uint8(0x0)      //0x00000000 (0x00)
-	_s      = uint8(0x1) << 6 //0x01000000 - 0x01往左移6位 (0x40)
-	_w      = uint8(0x2) << 6 //0x10000000 - 0x10往左移6位 (0x80)
-	_n      = uint8(0x3) << 6 //0x11000000 - 0x11往左移6位 (0xC0)
-	CbEast  = CbSeat(_e)      //東家
-	CbSouth = CbSeat(_s)      //南家
-	CbWest  = CbSeat(_w)      //西家
-	CbNorth = CbSeat(_n)      //北家
-)
-
 var (
 	CbCardUint8s = [52]uint8{uint8(Club2), uint8(Club3), uint8(Club4), uint8(Club5), uint8(Club6), uint8(Club7), uint8(Club8), uint8(Club9), uint8(Club10), uint8(ClubJ), uint8(ClubQ), uint8(ClubK), uint8(ClubAce), uint8(Diamond2), uint8(Diamond3), uint8(Diamond4), uint8(Diamond5), uint8(Diamond6), uint8(Diamond7), uint8(Diamond8), uint8(Diamond9), uint8(Diamond10), uint8(DiamondJ), uint8(DiamondQ), uint8(DiamondK), uint8(DiamondAce), uint8(Heart2), uint8(Heart3), uint8(Heart4), uint8(Heart5), uint8(Heart6), uint8(Heart7), uint8(Heart8), uint8(Heart9), uint8(Heart10), uint8(HeartJ), uint8(HeartQ), uint8(HeartK), uint8(HeartAce), uint8(Spade2), uint8(Spade3), uint8(Spade4), uint8(Spade5), uint8(Spade6), uint8(Spade7), uint8(Spade8), uint8(Spade8), uint8(Spade10), uint8(SpadeJ), uint8(SpadeQ), uint8(SpadeK), uint8(SpadeAce)}
 	CbBidUint8s  = [56]uint8{uint8(Pass1), uint8(C1), uint8(D1), uint8(H1), uint8(S1), uint8(NT1), uint8(Db1), uint8(Db1x2), uint8(Pass2), uint8(C2), uint8(D2), uint8(H2), uint8(S2), uint8(NT2), uint8(Db2), uint8(Db2x2), uint8(Pass3), uint8(C3), uint8(D3), uint8(H3), uint8(S3), uint8(NT3), uint8(Db3), uint8(Db3x2), uint8(Pass4), uint8(C4), uint8(D4), uint8(H4), uint8(S4), uint8(NT4), uint8(Db4), uint8(Db4x2), uint8(Pass5), uint8(C5), uint8(D5), uint8(H5), uint8(S5), uint8(NT5), uint8(Db5), uint8(Db5x2), uint8(Pass6), uint8(C6), uint8(D6), uint8(H6), uint8(S6), uint8(NT6), uint8(Db6), uint8(Db6x2), uint8(Pass7), uint8(C7), uint8(D7), uint8(H7), uint8(S7), uint8(NT7), uint8(Db7), uint8(Db7x2)}
-	CbSeatUint8s = [4]uint8{_e, _s, _w, _n}
+	CbSeatUint8s = [4]uint8{east, south, west, north}
 )
 
 // Track 使用者軌跡(Lobby,Room)(protobuf)
@@ -271,6 +271,7 @@ const (
 	_GetTablePlayers                   //請求撈出桌面正在遊戲的玩家 (底線打頭表示只限roomManager內部使用
 	_GetZoneUsers                      //請求撈出Zone中的觀眾使用者,也包含四家玩者
 	_FindPlayer                        //請求找尋指定玩家連線
+	_GetTableInfo                      //請求取得房間觀眾,空位起點依序的玩家座位
 )
 
 /*
@@ -290,8 +291,10 @@ type (
 		//Zone   uint8 /*east south west north*/
 
 		pb.PlayingUser
-		Zone8 uint8 // 從 PlayingUser Zone轉型過來
+		Zone8 uint8 // 從 PlayingUser Zone轉型過來,放在Zone8是為了方便取用
 	}
+
+	Audiences []*RoomUser //代表非玩家的旁賽者
 )
 
 func (ru *RoomUser) Ticket() {
@@ -299,6 +302,17 @@ func (ru *RoomUser) Ticket() {
 }
 func (ru *RoomUser) TicketString() string {
 	return ru.TicketTime.AsTime().Format("01/02 15:04:05")
+}
+
+// Connections 的所有觀眾連線
+func (audiences Audiences) Connections() (connections []*skf.NSConn) {
+	for i := range audiences {
+		if audiences[i].NsConn.Conn.IsClosed() {
+			continue
+		}
+		connections = append(connections, audiences[i].NsConn)
+	}
+	return
 }
 
 /************************************************************************************/
@@ -316,13 +330,6 @@ const (
 
 	//valueNotSet 表示值未定,因為x00被用於其他意義上
 	valueNotSet uint8 = 0x88
-)
-
-const (
-	east  uint8 = 0x0      //0x00
-	south uint8 = 0x1 << 6 //0x40
-	west  uint8 = 0x2 << 6 //0x80
-	north uint8 = 0x3 << 6 //0xC0
 )
 
 // Poker by byte & Deck of Poker

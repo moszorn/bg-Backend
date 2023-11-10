@@ -3,8 +3,10 @@ package game
 import (
 	"context"
 
-	"github.com/moszorn/pb"
 	"github.com/moszorn/utils/skf"
+
+	"google.golang.org/protobuf/proto"
+	//"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 type (
@@ -12,7 +14,7 @@ type (
 		RoomAdd(conn *skf.NSConn, roomName string)
 		RoomSub(nsConn *skf.NSConn, roomName string)
 	}
-	roomUserCounter func(*skf.NSConn, string)
+	roomUserCounter func(nsConn *skf.NSConn, roomName string)
 )
 
 type PayloadType uint8
@@ -23,10 +25,10 @@ const (
 )
 
 type payloadData struct {
-	Player      uint8       //代表player seat 通常針對指定的玩家, 表示Zone的情境應該不會發生
-	Data        []uint8     // 可以是byte, bytes
-	ProtoData   pb.Message  // proto
-	PayloadType PayloadType //這個 payload 屬於那種型態的封	包
+	Player      uint8         //代表player seat 通常針對指定的玩家, 表示Zone的情境應該不會發生
+	Data        []uint8       // 可以是byte, bytes
+	ProtoData   proto.Message // proto
+	PayloadType PayloadType   //這個 payload 屬於那種型態的封	包
 }
 
 type Game struct { // 玩家進入房間, 玩家進入遊戲,玩家離開房間,玩家離開遊戲
@@ -34,8 +36,8 @@ type Game struct { // 玩家進入房間, 玩家進入遊戲,玩家離開房間,
 	Shutdown context.CancelFunc
 
 	//計數入房間的人數
-	counterAdd roomUserCounter
-	counterSub roomUserCounter
+	CounterAdd roomUserCounter
+	CounterSub roomUserCounter
 
 	// 未來 當遊戲桌關閉時,記得一同關閉channel 以免leaking
 	roomManager *RoomManager //管理遊戲房間所有連線(觀眾,玩家),與當前房間(Game)中的座位狀態
@@ -69,8 +71,8 @@ func CreateCBGame(pid context.Context, counter UserCounter, tableName string, ta
 	ctx, cancelFunc := context.WithCancel(pid)
 
 	cbGame := &Game{
-		counterAdd:  counter.RoomAdd,
-		counterSub:  counter.RoomSub,
+		CounterAdd:  counter.RoomAdd,
+		CounterSub:  counter.RoomSub,
 		Shutdown:    cancelFunc,
 		engine:      newEngine(),
 		roomManager: newRoomManager(ctx),
@@ -135,8 +137,10 @@ func (g *Game) start() (bidder uint8, forbidden []uint8, done bool) {
 	return
 }
 
-// UserJoin 使用者進入房間 必須參數RoomUser {*skf.NSConn, userName, userZone}
+// UserJoin 使用者進入房間,參數user必須有*skf.NSConn, userName, userZone,底層會送出 TableInfo
 func (g *Game) UserJoin(user *RoomUser) {
+	//TODO: 需要從engine取出當前遊戲狀態,並一併傳入roomManager.UserJoin回送給User
+	// 回送給加入者訊息是RoomInfo (UserPrivateTableInfo)詢問房間人數,桌面狀態,座位狀態 (何時執行:剛進入房間時)
 	go g.roomManager.UserJoin(user)
 }
 
@@ -154,6 +158,12 @@ func (g *Game) PlayerLeave(user *RoomUser) {
 }
 
 /* ======================================================================================== */
+
+// PlayGroundForPayload 測試與前端封包通訊用
+func (g *Game) PlayGroundForPayload(user *RoomUser) {
+	go g.roomManager.PlayGroundForPayload(user)
+}
+
 /* ======================================================================================== */
 /* ======================================================================================== */
 /* ======================================================================================== */

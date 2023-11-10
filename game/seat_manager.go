@@ -253,22 +253,25 @@ func (mgr *SeatManager) setSeatValue(seat, value uint8) (setSuccess bool) {
 	}
 }
 
-func (mgr *SeatManager) seatPlays() (eastPlay, southPlay, westPlay, northPlay uint8) {
+// 這個方法是舊有的 seatPlays改版, 回傳座位上玩家資訊 (可能座位上會沒人nil)
+func (mgr *SeatManager) seatPlays() (eastPlay, southPlay, westPlay, northPlay *RoomUser) {
 	mgr.Do(func(i any) {
 		v := i.(*seatItem)
 		switch *v.Name {
 		case east:
-			eastPlay = v.Value
+			eastPlay = v.User
 		case south:
-			southPlay = v.Value
+			southPlay = v.User
 		case west:
-			westPlay = v.Value
+			westPlay = v.User
 		case north:
-			northPlay = v.Value
+			northPlay = v.User
 		}
 	})
 	return
 }
+
+// playSeat 出牌者, playValue 打出什麼牌, 回傳是否這次出牌已經滿四人出牌,可進入下一回合了
 func (mgr *SeatManager) seatPlay(playSeat, playValue uint8) (roundCompleted bool) {
 	//step1. shift到 playSeat位置, 設定SeatItem.play
 	//step2. 累加 aa

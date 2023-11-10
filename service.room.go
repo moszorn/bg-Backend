@@ -55,7 +55,7 @@ func (rooms AllRoom) enterProcess(ns *skf.NSConn, m skf.Message) (g *game.Game, 
 	u = &game.RoomUser{
 		NsConn:      ns,
 		PlayingUser: PB,
-		Zone8:       uint8(PB.Zone), /*坑*/
+		Zone8:       uint8(PB.Zone), /*坑:Zone8為了方便取用 */
 	}
 
 	g, err = rooms.room(m.Room)
@@ -68,7 +68,7 @@ func (rooms AllRoom) enterProcess(ns *skf.NSConn, m skf.Message) (g *game.Game, 
 
 // UserJoin 必要參數使用者姓名, 區域
 func (rooms AllRoom) UserJoin(ns *skf.NSConn, m skf.Message) (er error) {
-	roomLog(ns, m)
+	//roomLog(ns, m)
 	g, u, er := rooms.enterProcess(ns, m)
 	if er != nil {
 		var err *BackendErr
@@ -213,8 +213,10 @@ func (rooms AllRoom) callBackStoreConnectionRole(ns *skf.NSConn, m skf.Message) 
 	return nil
 }
 
-func (rooms AllRoom) _OnNamespaceConnected(c *skf.NSConn, m skf.Message) error {
-	generalLog(c, m)
+func (rooms AllRoom) _OnNamespaceConnected(ns *skf.NSConn, m skf.Message) error {
+	generalLog(ns, m)
+
+	return nil
 
 	//👍 注意,在此測試 proto buf 傳送到Client
 	/*
@@ -245,7 +247,7 @@ func (rooms AllRoom) _OnNamespaceConnected(c *skf.NSConn, m skf.Message) error {
 	return nil
 }
 func (rooms AllRoom) _OnNamespaceDisconnect(c *skf.NSConn, m skf.Message) error {
-	generalLog(c, m)
+	//generalLog(c, m)
 
 	ctx := context.Background()
 	var err error
@@ -256,21 +258,52 @@ func (rooms AllRoom) _OnNamespaceDisconnect(c *skf.NSConn, m skf.Message) error 
 	return nil
 }
 func (rooms AllRoom) _OnRoomJoin(c *skf.NSConn, m skf.Message) error {
-	generalLog(c, m)
+	//generalLog(c, m)
 	//這裡不要執行任何邏輯,因為假如這裡發生錯誤,就不會執行到 _OnRoomJoined
 	//因此所有邏輯都放到 _OnRoomJoined Event中去執行
 	return nil
 }
 
-func (rooms AllRoom) _OnRoomJoined(c *skf.NSConn, m skf.Message) error {
-	generalLog(c, m)
-	rooms.UserJoin(c, m)
+func (rooms AllRoom) _OnRoomJoined(ns *skf.NSConn, m skf.Message) error {
+	//generalLog(c, m)
+	fmt.Println("sfsdfsfsfsfsfsfssf")
+	g, u, er := rooms.enterProcess(ns, m)
+	if er != nil {
+		var err *BackendErr
+		if errors.As(er, &err) {
+			slog.Error("房間錯誤", slog.String("msg", err.Error()), slog.String("room", m.Room))
+		}
+		return er
+	}
+
+	g.PlayGroundForPayload(u)
 	return nil
 }
 
+// 前端必須曾經執行過  socket.emit(skf.OnRoomJoin); _OnRoomLeft才會生效
+// _OnRoomLeave先執行後才執行_OnRoomLeft
 func (rooms AllRoom) _OnRoomLeft(c *skf.NSConn, m skf.Message) error {
-	generalLog(c, m)
-	rooms.UserLeave(c, m)
+	//roomLog(c, m)
+	g, _, er := rooms.enterProcess(c, m)
+	if er != nil {
+		var err *BackendErr
+		if errors.As(er, &err) {
+			slog.Error("房間錯誤", slog.String("msg", err.Error()), slog.String("room", m.Room))
+		}
+		return er
+	}
+	//房間人數減一
+	g.CounterSub(c, m.Room)
+	return nil
+}
+
+// 前端必須曾經執行過  socket.emit(skf.OnRoomJoin); _OnRoomLeave才會生效
+// _OnRoomLeave先執行後才執行_OnRoomLeft
+func (rooms AllRoom) _OnRoomLeave(c *skf.NSConn, m skf.Message) error {
+	roomLog(c, m)
+	// 坑: 清除的工作不要放在這,因為假如這裡發生錯誤,那_OnRoomLeft就不會執行
+
+	// 坑: 當Client不正常斷線時, 這裡的 *skf.NSConn就已經是 Closed了
 	return nil
 }
 
@@ -304,7 +337,7 @@ func (rooms AllRoom) _OnRoomJoined(c *skf.NSConn, m skf.Message) error {
 	//	var obj = cb.BidBoard{
 	//		Seat:      1972,
 	//		Forbidden: []uint8{0x1, 0xa, 0xc, 0x7f, 0x10, 0x5},
-	//	}
+
 	//	bytes, err := proto.Marshal(&obj)
 	//	if err != nil {
 	//		panic(err)
@@ -373,11 +406,3 @@ func (rooms AllRoom) _OnRoomLeft(c *skf.NSConn, m skf.Message) error {
 	return nil
 }
 */
-
-func (rooms AllRoom) _OnRoomLeave(c *skf.NSConn, m skf.Message) error {
-	roomLog(c, m)
-	// 坑: 清除的工作不要放在這,因為假如這裡發生錯誤,那_OnRoomLeft就不會執行
-
-	// 坑: 當Client不正常斷線時, 這裡的 *skf.NSConn就已經是 Closed了
-	return nil
-}
