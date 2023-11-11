@@ -159,9 +159,14 @@ func (g *Game) PlayerLeave(user *RoomUser) {
 
 /* ======================================================================================== */
 
-// PlayGroundForPayload 測試與前端封包通訊用
-func (g *Game) PlayGroundForPayload(user *RoomUser) {
-	go g.roomManager.PlayGroundForPayload(user)
+// DevelopPrivatePayloadTest 測試與前端封包通訊用
+func (g *Game) DevelopPrivatePayloadTest(user *RoomUser) {
+	go g.roomManager.DevelopPrivatePayloadTest(user)
+}
+
+// DevelopBroadcastTest 測試與前端封包通訊用
+func (g *Game) DevelopBroadcastTest(user *RoomUser) {
+	go g.roomManager.DevelopBroadcastTest(user)
 }
 
 /* ======================================================================================== */

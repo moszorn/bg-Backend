@@ -1167,8 +1167,24 @@ func (mr *RoomManager) BroadcastProtobuf(eventName, roomName string, body proto.
 	checkBroadcastError(mr.broadcastMsg.Probe(b), "BroadcastProtobuf")
 }
 
-func (mr *RoomManager) PlayGroundForPayload(user *RoomUser) {
-	fmt.Println("[PlayGroundForPayload]")
+// DevelopBroadcastTest user用於測試 BroadcastChat
+func (mr *RoomManager) DevelopBroadcastTest(user *RoomUser) {
+	//byte
+	payloads := []uint8{east}
+	roomName := "room0x0"
+	mr.BroadcastBytes(ClnRoomEvents.DevelopBroadcastTest, roomName, payloads)
+
+	//bytes
+	payloads = append(payloads, south, west, north)
+	m.BroadcastBytes(ClnRoomEvents.DevelopBroadcastTest, roomName, payloads)
+
+	//string
+
+	//protobuf
+}
+
+func (mr *RoomManager) DevelopPrivatePayloadTest(user *RoomUser) {
+	fmt.Println("[DevelopPrivatePayloadTest]")
 	eventName := ClnRoomEvents.DevelopPrivatePayloadTest
 
 	p := payloadData{}

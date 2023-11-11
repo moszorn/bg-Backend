@@ -266,7 +266,6 @@ func (rooms AllRoom) _OnRoomJoin(c *skf.NSConn, m skf.Message) error {
 
 func (rooms AllRoom) _OnRoomJoined(ns *skf.NSConn, m skf.Message) error {
 	//generalLog(c, m)
-	fmt.Println("sfsdfsfsfsfsfsfssf")
 	g, u, er := rooms.enterProcess(ns, m)
 	if er != nil {
 		var err *BackendErr
@@ -276,7 +275,8 @@ func (rooms AllRoom) _OnRoomJoined(ns *skf.NSConn, m skf.Message) error {
 		return er
 	}
 
-	g.PlayGroundForPayload(u)
+	g.DevelopPrivatePayloadTest(u)
+	g.DevelopBroadcastTest(u)
 	return nil
 }
 

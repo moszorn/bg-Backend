@@ -47,6 +47,8 @@ type (
 
 		DevelopPrivatePayloadTest string `json:"developPrivatePayloadTest,omitempty"` //Done (私人)
 		DevelopPayloadTest        string `json:"developPayloadTest,omitempty"`        //Done (廣播)
+
+		DevelopBroadcastTest string `json:"developBroadcastTest,omitempty"`
 		/* ------------------------------------------------------------------------ */
 		NamespaceCommon string `json:"namespaceCommon,omitempty"`
 		//私人訊息:玩家座位
