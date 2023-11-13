@@ -137,6 +137,8 @@ func newRoomManager(shutdown context.Context) *RoomManager {
 
 // Start RoomManager開始幹活,由Game執行
 func (mr *RoomManager) Start() {
+	slog.Debug(fmt.Sprintf("RoomManager(%s) Start", mr.g.name))
+
 	start := true
 	for start {
 		select {
@@ -320,7 +322,6 @@ func (mr *RoomManager) Start() {
 			send.Response <- mr.broadcast(msg)
 		default:
 			// 移除突然斷線的user
-			//g.rmClosedUsers()
 
 		}
 	}
@@ -407,6 +408,7 @@ func (mr *RoomManager) UserJoin(user *RoomUser) {
 		return
 	}
 
+	fmt.Printf("================ CounterAdd : user.NsConn: %p\n", user.NsConn)
 	mr.g.CounterAdd(user.NsConn, mr.g.name)
 
 	//告知client 切換到房間
@@ -438,6 +440,8 @@ func (mr *RoomManager) UserLeave(user *RoomUser) {
 		user = nil
 		return
 	}
+
+	fmt.Printf("================ CounterSub : user.NsConn: %p\n", user.NsConn)
 
 	//移到 NamespaceDisconnected
 	mr.g.CounterSub(user.NsConn, mr.g.name)
@@ -1155,32 +1159,58 @@ func (mr *RoomManager) BroadcastString(eventName, roomName string, body string) 
 
 // BroadcastProtobuf 發送protobuf 給所有人
 func (mr *RoomManager) BroadcastProtobuf(eventName, roomName string, body proto.Message) {
+
 	marshal, err := pb.Marshal(body)
 	if err != nil {
 		slog.Error("ProtoMarshal(BroadcastProtobuf)", utilog.Err(err))
 		return
 	}
 
-	b := &broadcastRequest{
-		msg: broadcastMsg(nil, eventName, roomName, marshal, nil),
-	}
-	checkBroadcastError(mr.broadcastMsg.Probe(b), "BroadcastProtobuf")
+	mr.BroadcastBytes(eventName, roomName, marshal)
 }
 
 // DevelopBroadcastTest user用於測試 BroadcastChat
 func (mr *RoomManager) DevelopBroadcastTest(user *RoomUser) {
-	//byte
-	payloads := []uint8{east}
-	roomName := "room0x0"
-	mr.BroadcastBytes(ClnRoomEvents.DevelopBroadcastTest, roomName, payloads)
+	roomName := "room0x0" //room0x0 room0x1
+	eventName := ClnRoomEvents.DevelopBroadcastTest
 
-	//bytes
-	payloads = append(payloads, south, west, north)
-	m.BroadcastBytes(ClnRoomEvents.DevelopBroadcastTest, roomName, payloads)
+	//byte
+	//廣播byte  👍
+	payloads := []uint8{north}
+	mr.BroadcastBytes(eventName, roomName, payloads)
+	time.Sleep(time.Second * 2)
+
+	//bytes (前端bytes與 protobuf 互斥)
+	//廣播bytes  👍
+	//payloads = append(payloads, south, west, east)
+	//mr.BroadcastBytes(eventName, roomName, payloads)
 
 	//string
+	//廣播字串  👍
+	//mr.BroadcastBytes(eventName, roomName, []byte("日本字 人間にんげん"))
 
-	//protobuf
+	//protobuf  廣播使用 protobuf,就不能再使用 string, values 因為是前端限制
+	//廣播  👍 Protobuf
+	message := pb.MessagePacket{
+		Type:    pb.MessagePacket_Admin,
+		Content: "hello MessagePacket",
+		Tt:      pb.LocalTimestamp(time.Now()),
+		RoomId:  12,
+		From:    "蔡忠正",
+		To:      "Client",
+	}
+	anyItem, err := anypb.New(&message)
+	if err != nil {
+		panic(err)
+	}
+
+	packet := pb.ProtoPacket{
+		AnyItem: anyItem,
+		Tt:      pb.LocalTimestamp(time.Now()),
+		Topic:   pb.TopicType_Message,
+		SN:      99,
+	}
+	mr.BroadcastProtobuf(eventName, roomName, &packet)
 }
 
 func (mr *RoomManager) DevelopPrivatePayloadTest(user *RoomUser) {
@@ -1196,6 +1226,7 @@ func (mr *RoomManager) DevelopPrivatePayloadTest(user *RoomUser) {
 	mr.send(user.NsConn, p, eventName) // 👍
 
 	//case2 bytes ,前端判斷 msg.values 只要不為null, 就可取出bytes值
+	//(前端bytes與 protobuf 互斥)
 	/*	p.PayloadType = ByteType
 		p.PayloadType = ByteType
 		p.Data = append(p.Data, south, west, north)
@@ -1203,7 +1234,8 @@ func (mr *RoomManager) DevelopPrivatePayloadTest(user *RoomUser) {
 		p.ProtoData = nil
 		mr.send(user.NsConn, p, eventName)
 	*/
-	//case3 proto ,前端判斷 msg.pbody只要不為null, 就可取出pbody(protobuf)值
+
+	//case3  👍 proto ,前端判斷 msg.pbody只要不為null, 就可取出pbody(protobuf)值
 	p.PayloadType = ProtobufType
 	message := pb.MessagePacket{
 		Type:    pb.MessagePacket_Admin,

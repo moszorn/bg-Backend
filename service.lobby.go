@@ -37,7 +37,12 @@ func (app *BridgeGameLobby) chanLoop() {
 	for {
 		select {
 		case arg := <-app.counter.BroadcastRoomJoins:
-			slog.Debug("廣播房間人數", slog.Int("roomId", int(arg.roomNumOfs.Id)), slog.String("room", arg.roomNumOfs.Name), slog.Int("人數", int(arg.roomNumOfs.Joiner)))
+
+			slog.Debug("廣播房間人數",
+				slog.Int("roomId", int(arg.roomNumOfs.Id)),
+				slog.String("room", arg.roomNumOfs.Name),
+				slog.Int("大廳人數", int(arg.roomNumOfs.Joiner)),
+				slog.Int("站上總數", int(arg.roomNumOfs.Total)))
 
 			msg := skf.Message{
 				Namespace: game.LobbySpaceName,
@@ -52,7 +57,10 @@ func (app *BridgeGameLobby) chanLoop() {
 			app.server.Broadcast(arg.nsConn, msg)
 
 		case arg := <-app.counter.BroadcastJoins:
-			slog.Debug("廣播大廳人數", slog.Int("lobby", int(arg.lobbyNumOfs.Joiner)))
+
+			slog.Debug("廣播大廳人數",
+				slog.Int("大廳人數", int(arg.lobbyNumOfs.Joiner)),
+				slog.Int("總人數", int(arg.lobbyNumOfs.Total)))
 
 			msg := skf.Message{
 				Namespace: game.LobbySpaceName,
@@ -99,13 +107,16 @@ func (app *BridgeGameLobby) _OnNamespaceConnected(c *skf.NSConn, m skf.Message) 
 	//step1.大廳人數加加,並對已經在大廳的人進行廣播(app.counter.BroadcastJoins)
 	app.counter.LobbyAdd(c)
 
-	//step2. 對剛連上的Client送出大廳房間人數資訊
-	var l *cb.LobbyNumOfs
-	l = app.counter.GetSitePlayer()
+	//step2. 對剛連上的Client,個別送出大廳房間人數資訊
+	var l cb.LobbyNumOfs
+	l = *app.counter.GetSitePlayer()
 
-	slog.Debug("Lobby", slog.Int("大廳桌數", len(l.Tables)), slog.Int("大廳人數", int(l.Joiner)), slog.Int("total", int(l.Total)))
+	marshal, err := pb.Marshal(&l)
+	if err != nil {
+		panic(err)
+	}
 
-	marshal, _ := pb.Marshal(l)
+	// 坑: 透過 c.EmitBinary 前端想要讀出,必須參考 message.d.dart C A T C H  FORMAT:294
 	c.EmitBinary(game.ClnLobbyEvents.NumOfRooms, marshal)
 
 	return nil

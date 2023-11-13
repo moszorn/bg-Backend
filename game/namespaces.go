@@ -92,10 +92,10 @@ var (
 
 	// server回覆Client時要註明哪一個Client Event handler為接收
 	clientLobbySpace = &lobbyNamespace{
-		NumOfUsers:       "d.numOfUsers",
-		NumOfRooms:       "d.numOfRooms",
-		NumOfUsersInRoom: "d.numOfUsersInRoom",
-		NumOfUsersOnSite: "d.allUsers",
+		NumOfUsers:       "cnou",
+		NumOfRooms:       "cnor", // d.numOfRooms
+		NumOfUsersInRoom: "cnouir",
+		NumOfUsersOnSite: "cnouos",
 	}
 
 	lobbySpaceEvents = map[ServerClientEnum]*lobbyNamespace{
@@ -136,6 +136,7 @@ var (
 		GamePrivateNotyBid:        "gpnb",    //Done
 		DevelopPayloadTest:        "dpt",     //Done
 		DevelopPrivatePayloadTest: "dppt",    //Done
+		DevelopBroadcastTest:      "dbt",
 
 		GamePrivateOnSeat:        "game.start.seat",
 		GameOpenBidStart:         "game.start.bid",

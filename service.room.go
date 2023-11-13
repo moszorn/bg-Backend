@@ -275,16 +275,16 @@ func (rooms AllRoom) _OnRoomJoined(ns *skf.NSConn, m skf.Message) error {
 		return er
 	}
 
-	g.DevelopPrivatePayloadTest(u)
 	g.DevelopBroadcastTest(u)
+	//g.DevelopPrivatePayloadTest(u)
 	return nil
 }
 
 // 前端必須曾經執行過  socket.emit(skf.OnRoomJoin); _OnRoomLeft才會生效
 // _OnRoomLeave先執行後才執行_OnRoomLeft
 func (rooms AllRoom) _OnRoomLeft(c *skf.NSConn, m skf.Message) error {
-	//roomLog(c, m)
-	g, _, er := rooms.enterProcess(c, m)
+	roomLog(c, m)
+	_, _, er := rooms.enterProcess(c, m)
 	if er != nil {
 		var err *BackendErr
 		if errors.As(er, &err) {
@@ -293,14 +293,14 @@ func (rooms AllRoom) _OnRoomLeft(c *skf.NSConn, m skf.Message) error {
 		return er
 	}
 	//房間人數減一
-	g.CounterSub(c, m.Room)
+	//g.CounterSub(c, m.Room)
 	return nil
 }
 
 // 前端必須曾經執行過  socket.emit(skf.OnRoomJoin); _OnRoomLeave才會生效
 // _OnRoomLeave先執行後才執行_OnRoomLeft
 func (rooms AllRoom) _OnRoomLeave(c *skf.NSConn, m skf.Message) error {
-	roomLog(c, m)
+	//roomLog(c, m)
 	// 坑: 清除的工作不要放在這,因為假如這裡發生錯誤,那_OnRoomLeft就不會執行
 
 	// 坑: 當Client不正常斷線時, 這裡的 *skf.NSConn就已經是 Closed了

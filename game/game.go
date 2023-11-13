@@ -2,6 +2,8 @@ package game
 
 import (
 	"context"
+	"fmt"
+	"log/slog"
 
 	"github.com/moszorn/utils/skf"
 
@@ -35,7 +37,7 @@ type Game struct { // 玩家進入房間, 玩家進入遊戲,玩家離開房間,
 
 	Shutdown context.CancelFunc
 
-	//計數入房間的人數
+	//計數入房間的人數,由UserCounter而設定
 	CounterAdd roomUserCounter
 	CounterSub roomUserCounter
 
@@ -70,7 +72,7 @@ func CreateCBGame(pid context.Context, counter UserCounter, tableName string, ta
 
 	ctx, cancelFunc := context.WithCancel(pid)
 
-	cbGame := &Game{
+	g := &Game{
 		CounterAdd:  counter.RoomAdd,
 		CounterSub:  counter.RoomSub,
 		Shutdown:    cancelFunc,
@@ -80,16 +82,17 @@ func CreateCBGame(pid context.Context, counter UserCounter, tableName string, ta
 		Id:          tableId,
 	}
 	//新的一副牌
-	NewDeck(cbGame)
+	NewDeck(g)
 
-	cbGame.Start()
+	g.Start()
 
-	return cbGame
+	return g
 }
 
 // Start 啟動房間, 同時啟動RoomManager
 func (g *Game) Start() {
 
+	slog.Debug(fmt.Sprintf("Game(room:%s, roomId:%d) Start", g.name, g.Id))
 	g.roomManager.g = g
 
 	go g.roomManager.Start() //啟動RoomManager

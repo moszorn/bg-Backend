@@ -18,24 +18,26 @@ type (
 	Counter struct {
 
 		//詢問大廳中所有房間人數資訊
-		LobbyRoomsInfo rchanr.ChanReqWithArguments[struct{}, *cb.LobbyNumOfs]
+		LobbyRoomsInfo rchanr.ChanReqWithArguments[struct{}, cb.LobbyNumOfs]
 
 		//房間-人數
 		allRoomsJoins map[string]*cb.LobbyTable
-		roomJoins     chan *broadcastArg //chan房間名稱表玩家加入
-		roomLeaves    chan *broadcastArg //chan房間名稱表玩家離開
+		roomJoins     chan broadcastArg //chan房間名稱表玩家加入
+		roomLeaves    chan broadcastArg //chan房間名稱表玩家離開
 
 		lobbyLeaves chan *skf.NSConn // 代表誰進入, joins都必須調整
 		lobbyJoins  chan *skf.NSConn //代表誰離開, joins都必須調整
 
 		//廣播通知 , Lobby.go 收到後會進行大廳玩家廣播
-		BroadcastJoins     chan *broadcastArg //當前大廳人數
-		BroadcastRoomJoins chan *broadcastArg //某間房間人數
+		BroadcastJoins     chan broadcastArg //當前大廳人數
+		BroadcastRoomJoins chan broadcastArg //某間房間人數
 
 		//站上總人數 = 大廳人數(joiners) + 所有房間人數(roomers)
+
 		//大廳總人數
 		joiners uint32
-		//所有房間人數
+
+		//所有存在房間人數(大廳人數指不存在房間裡的人)
 		roomers uint32
 	}
 )
@@ -60,17 +62,17 @@ func NewCounterService(roomsJoins *map[string]*cb.LobbyTable) *Counter {
 	}
 
 	var counter = &Counter{
-		LobbyRoomsInfo: make(chan rchanr.ChanRepWithArguments[struct{}, *cb.LobbyNumOfs]),
-		allRoomsJoins:  *roomsJoins,
-		roomJoins:      make(chan *broadcastArg),
-		roomLeaves:     make(chan *broadcastArg),
-		joiners:        0,
-		roomers:        0,
+		LobbyRoomsInfo: make(chan rchanr.ChanRepWithArguments[struct{}, cb.LobbyNumOfs]),
+		roomJoins:      make(chan broadcastArg),
+		roomLeaves:     make(chan broadcastArg),
 		lobbyLeaves:    make(chan *skf.NSConn),
 		lobbyJoins:     make(chan *skf.NSConn),
 
-		BroadcastJoins:     make(chan *broadcastArg),
-		BroadcastRoomJoins: make(chan *broadcastArg),
+		BroadcastJoins:     make(chan broadcastArg),
+		BroadcastRoomJoins: make(chan broadcastArg),
+		allRoomsJoins:      *roomsJoins,
+		joiners:            0,
+		roomers:            0,
 	}
 	go counter.chanLoop()
 
@@ -83,71 +85,67 @@ func (br *Counter) chanLoop() {
 	for {
 		select {
 		case arg := <-br.roomJoins:
-			if r, ok := br.allRoomsJoins[arg.roomName]; ok {
+			if table, ok := br.allRoomsJoins[arg.roomName]; ok {
 
-				br.roomers++
-				r.Joiner++
+				br.roomers++ //存在房間裡的總人數
+				//br.joiners--   // joiner 指的是在大廳未進入到房間裡的人數
+				table.Joiner++ // 現在入桌該桌的人數
+
 				// 注意: 沒送出會掛掉
-				numOfR := &cb.LobbyTable{
-					Joiner: 0,
+				br.BroadcastRoomJoins <- broadcastArg{
+					roomNumOfs: &cb.LobbyTable{
+						Name:   arg.roomName,
+						Id:     table.Id,
+						Joiner: table.Joiner,            //桌上人數
+						Total:  br.roomers + br.joiners, //大廳與所有房間人數的加總(站上總人數)
+					},
+					nsConn:   arg.nsConn,
+					roomName: arg.roomName,
 				}
-				numOfR.Name = arg.roomName
-				numOfR.Id = r.Id
-				numOfR.Joiner = r.Joiner
-				numOfR.Total = br.roomers + br.joiners
-				broadcastArg := &broadcastArg{}
-				broadcastArg.roomNumOfs = numOfR
-				broadcastArg.nsConn = arg.nsConn
-
-				br.BroadcastRoomJoins <- broadcastArg
 			}
 		case arg := <-br.roomLeaves:
-			if r, ok := br.allRoomsJoins[arg.roomName]; ok {
+			if table, ok := br.allRoomsJoins[arg.roomName]; ok {
+
 				br.roomers--
-				r.Joiner--
+				//	br.joiners++
+				table.Joiner--
+
 				// 注意: 沒送出會掛掉
-				numOfR := &cb.LobbyTable{
-					Joiner: 0,
+				br.BroadcastRoomJoins <- broadcastArg{
+					roomNumOfs: &cb.LobbyTable{
+						Joiner: table.Joiner,
+						Total:  br.roomers + br.joiners,
+						Name:   arg.roomName,
+						Id:     table.Id,
+					},
+					nsConn:   arg.nsConn,
+					roomName: arg.roomName,
 				}
-				numOfR.Name = arg.roomName
-				numOfR.Id = r.Id
-				numOfR.Joiner = r.Joiner
-				numOfR.Total = br.roomers + br.joiners
-				broadcastArg := &broadcastArg{}
-				broadcastArg.roomNumOfs = numOfR
-				broadcastArg.nsConn = arg.nsConn
-				br.BroadcastRoomJoins <- broadcastArg
 			}
 		case nsConn := <-br.lobbyLeaves:
+			br.joiners-- // joiner 指的是在大廳未進入到房間裡的人數
 
-			br.joiners--
-
-			// 注意: 沒送出會掛掉
-			numOfL := &cb.LobbyNumOfs{
-				Joiner: 0,
+			br.BroadcastJoins <- broadcastArg{
+				lobbyNumOfs: &cb.LobbyNumOfs{
+					Joiner: br.joiners,
+					Total:  br.roomers + br.joiners,
+				},
+				nsConn: nsConn,
 			}
-			numOfL.Joiner = br.joiners
-			numOfL.Total = br.roomers + br.joiners
-			broadcastArg := &broadcastArg{}
-			broadcastArg.lobbyNumOfs = numOfL
-			broadcastArg.nsConn = nsConn
-			br.BroadcastJoins <- broadcastArg
+
 		case nsConn := <-br.lobbyJoins:
 
-			br.joiners++
+			br.joiners++ // joiner 指的是在大廳未進入到房間裡的人數
 
-			// 注意: 沒送出會掛掉
-			numOfL := &cb.LobbyNumOfs{
-				Joiner: 0,
+			br.BroadcastJoins <- broadcastArg{
+				lobbyNumOfs: &cb.LobbyNumOfs{
+					Joiner: br.joiners,
+					Total:  br.roomers + br.joiners,
+				},
+				nsConn: nsConn,
 			}
-			numOfL.Joiner = br.joiners
-			numOfL.Total = br.roomers + br.joiners
-			broadcastArg := &broadcastArg{}
-			broadcastArg.lobbyNumOfs = numOfL
-			broadcastArg.nsConn = nsConn
-			br.BroadcastJoins <- broadcastArg
 
-		case v := <-br.LobbyRoomsInfo:
+		case chrr := <-br.LobbyRoomsInfo:
 
 			tables := make([]*cb.LobbyTable, 0, len(br.allRoomsJoins))
 			for roomName := range br.allRoomsJoins {
@@ -157,13 +155,12 @@ func (br *Counter) chanLoop() {
 					Joiner: br.allRoomsJoins[roomName].Joiner,
 				})
 			}
-			result := &cb.LobbyNumOfs{
+			result := cb.LobbyNumOfs{
 				Tables: tables,                  //所有房間人數
 				Joiner: br.joiners,              //大廳人數
 				Total:  br.joiners + br.roomers, //站上總人數
 			}
-			// 注意: 沒送出會掛掉
-			v.Response <- result
+			chrr.Response <- result
 		default:
 
 		}
@@ -172,10 +169,10 @@ func (br *Counter) chanLoop() {
 
 // GetSitePlayer 取出大廳所有房間人數資訊
 func (br *Counter) GetSitePlayer() *cb.LobbyNumOfs {
-	var result *cb.LobbyNumOfs
+	var result cb.LobbyNumOfs
 
 	result = br.LobbyRoomsInfo.Probe(struct{}{})
-	return result
+	return &result
 }
 
 // LobbyAdd 進入大廳人數加1
@@ -191,7 +188,7 @@ func (br *Counter) LobbySub(nsConn *skf.NSConn) {
 // RoomAdd 玩家入房間,房間人數加1
 // GameSpace 玩家入房 _OnRoomJoined ,參考 manager.auth.go - _OnRoomJoined
 func (br *Counter) RoomAdd(nsConn *skf.NSConn, roomName string) {
-	br.roomJoins <- &broadcastArg{
+	br.roomJoins <- broadcastArg{
 		nsConn:   nsConn,
 		roomName: roomName,
 	}
@@ -200,7 +197,7 @@ func (br *Counter) RoomAdd(nsConn *skf.NSConn, roomName string) {
 // RoomSub 玩家離開房間,玩家斷線,房間人數減1
 // GameSpace 玩家離房  _OnRoomLeft ,參考 manager.auth.go - _OnRoomLeft
 func (br *Counter) RoomSub(nsConn *skf.NSConn, roomName string) {
-	br.roomLeaves <- &broadcastArg{
+	br.roomLeaves <- broadcastArg{
 		nsConn:   nsConn,
 		roomName: roomName,
 	}
