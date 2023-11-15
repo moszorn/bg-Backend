@@ -15,10 +15,10 @@ func _() {
 }
 
 const (
-	_CbSeat_name_0 = "東家"
-	_CbSeat_name_1 = "南家"
-	_CbSeat_name_2 = "西家"
-	_CbSeat_name_3 = "北家"
+	_CbSeat_name_0 = "東"
+	_CbSeat_name_1 = "南"
+	_CbSeat_name_2 = "西"
+	_CbSeat_name_3 = "北"
 )
 
 func (i CbSeat) String() string {

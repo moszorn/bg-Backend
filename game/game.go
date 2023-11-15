@@ -126,7 +126,7 @@ func (g *Game) SeatShift(seat uint8) (nextSeat uint8) {
 	return g.roomManager.SeatShift(seat)
 }
 
-// start 開始遊戲
+// start 開始遊戲,這個method會進行洗牌, bidder競叫者,forbidden競叫品, done
 func (g *Game) start() (bidder uint8, forbidden []uint8, done bool) {
 	//洗牌
 	Shuffle(g)
@@ -158,6 +158,10 @@ func (g *Game) PlayerJoin(user *RoomUser) {
 
 func (g *Game) PlayerLeave(user *RoomUser) {
 	go g.roomManager.PlayerLeave(user)
+}
+
+func (g *Game) RoomInfo(user *RoomUser) {
+	go g.roomManager.RoomInfo(user)
 }
 
 /* ======================================================================================== */

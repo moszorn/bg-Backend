@@ -37,7 +37,7 @@ type (
 		//大廳總人數
 		joiners uint32
 
-		//所有存在房間人數(大廳人數指不存在房間裡的人)
+		//所有存在房間人數
 		roomers uint32
 	}
 )
@@ -48,7 +48,7 @@ type (
 func NewCounterService(roomsJoins *map[string]*cb.LobbyTable) *Counter {
 
 	if len(*roomsJoins) == 0 {
-		panic("必出傳入有效桌名集合")
+		panic("必須傳入有效桌名集合")
 	}
 
 	idxId := int32(0)
@@ -87,11 +87,9 @@ func (br *Counter) chanLoop() {
 		case arg := <-br.roomJoins:
 			if table, ok := br.allRoomsJoins[arg.roomName]; ok {
 
-				br.roomers++ //存在房間裡的總人數
-				//br.joiners--   // joiner 指的是在大廳未進入到房間裡的人數
+				br.roomers++   //存在房間裡的總人數
 				table.Joiner++ // 現在入桌該桌的人數
 
-				// 注意: 沒送出會掛掉
 				br.BroadcastRoomJoins <- broadcastArg{
 					roomNumOfs: &cb.LobbyTable{
 						Name:   arg.roomName,
@@ -107,10 +105,8 @@ func (br *Counter) chanLoop() {
 			if table, ok := br.allRoomsJoins[arg.roomName]; ok {
 
 				br.roomers--
-				//	br.joiners++
 				table.Joiner--
 
-				// 注意: 沒送出會掛掉
 				br.BroadcastRoomJoins <- broadcastArg{
 					roomNumOfs: &cb.LobbyTable{
 						Joiner: table.Joiner,
@@ -124,7 +120,6 @@ func (br *Counter) chanLoop() {
 			}
 		case nsConn := <-br.lobbyLeaves:
 			br.joiners-- // joiner 指的是在大廳未進入到房間裡的人數
-
 			br.BroadcastJoins <- broadcastArg{
 				lobbyNumOfs: &cb.LobbyNumOfs{
 					Joiner: br.joiners,
@@ -134,9 +129,7 @@ func (br *Counter) chanLoop() {
 			}
 
 		case nsConn := <-br.lobbyJoins:
-
 			br.joiners++ // joiner 指的是在大廳未進入到房間裡的人數
-
 			br.BroadcastJoins <- broadcastArg{
 				lobbyNumOfs: &cb.LobbyNumOfs{
 					Joiner: br.joiners,
@@ -188,6 +181,7 @@ func (br *Counter) LobbySub(nsConn *skf.NSConn) {
 // RoomAdd 玩家入房間,房間人數加1
 // GameSpace 玩家入房 _OnRoomJoined ,參考 manager.auth.go - _OnRoomJoined
 func (br *Counter) RoomAdd(nsConn *skf.NSConn, roomName string) {
+
 	br.roomJoins <- broadcastArg{
 		nsConn:   nsConn,
 		roomName: roomName,

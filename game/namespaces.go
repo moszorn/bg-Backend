@@ -77,9 +77,9 @@ type (
 		//接收Space時發生錯誤的回覆
 		ErrorSpace string `json:"errorSpace,omitempty"` //Done
 		//接收Room時發生錯誤的回覆
-		ErrorRoom string `json:"errorRoom,omitempty"`
+		ErrorRoom string `json:"errorRoom,omitempty"` //Done
 		//接收Game時發生錯誤的回覆
-		ErrorGame string `json:"errorGame,omitempty"`
+		ErrorGame string `json:"errorGame,omitempty"` //Done
 	}
 )
 
@@ -153,9 +153,9 @@ var (
 		GameCardsConstraint:      "game.constraint.cards",
 		GameNotyShowDeclarerHand: "game.noty.declarer",
 		GameNotyClearGameTable:   "game.noty.cln.table",
-		ErrorSpace:               "e.space",
-		ErrorRoom:                "e.room",
-		ErrorGame:                "e.game",
+		ErrorSpace:               "e.space", //Done
+		ErrorRoom:                "e.room",  //Done
+		ErrorGame:                "e.game",  //Done
 	}
 
 	// Game 命名空間

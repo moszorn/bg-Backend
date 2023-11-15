@@ -29,8 +29,6 @@ func NewRoomSpaceService(pid context.Context, rooms *map[string]*game.Game, coun
 // AllRoom Key: 房間名稱/Id , Value: 房間服務, AllRoom 實作 RoomService
 type AllRoom map[string]*game.Game // interface should be Game
 
-// func (rooms AllRoom) (ns *skf.NSConn, m skf.Message) error
-
 func (rooms AllRoom) room(roomName string) (roomGame *game.Game, err error) {
 	var ok bool
 
@@ -55,7 +53,7 @@ func (rooms AllRoom) enterProcess(ns *skf.NSConn, m skf.Message) (g *game.Game, 
 	u = &game.RoomUser{
 		NsConn:      ns,
 		PlayingUser: PB,
-		Zone8:       uint8(PB.Zone), /*坑:Zone8為了方便取用 */
+		Zone8:       uint8(PB.Zone), /*使用Zone8是因為可方便取用 */
 	}
 
 	g, err = rooms.room(m.Room)
@@ -77,6 +75,7 @@ func (rooms AllRoom) UserJoin(ns *skf.NSConn, m skf.Message) (er error) {
 		}
 		return
 	}
+	slog.Info("UserJoin", slog.String("user", u.PlayingUser.Name), slog.String("zone", fmt.Sprintf("%s", game.CbSeat(u.Zone8))))
 	g.UserJoin(u)
 	return nil
 }
@@ -92,6 +91,7 @@ func (rooms AllRoom) UserLeave(ns *skf.NSConn, m skf.Message) (er error) {
 		}
 		return
 	}
+	slog.Info("UserLeave", slog.String("user", u.PlayingUser.Name), slog.String("zone", fmt.Sprintf("%s", game.CbSeat(u.Zone8))))
 	g.UserLeave(u)
 	return nil
 }
@@ -107,6 +107,7 @@ func (rooms AllRoom) PlayerJoin(ns *skf.NSConn, m skf.Message) (er error) {
 		}
 		return
 	}
+	slog.Info("PlayerJoin", slog.String("user", u.PlayingUser.Name), slog.String("zone", fmt.Sprintf("%s", game.CbSeat(u.Zone8))))
 	g.PlayerJoin(u)
 	return nil
 }
@@ -122,6 +123,7 @@ func (rooms AllRoom) PlayerLeave(ns *skf.NSConn, m skf.Message) (er error) {
 		}
 		return
 	}
+	slog.Info("PlayerLeave", slog.String("user", u.PlayingUser.Name), slog.String("zone", fmt.Sprintf("%s", game.CbSeat(u.Zone8))))
 	g.PlayerLeave(u)
 	return nil
 }
@@ -214,36 +216,7 @@ func (rooms AllRoom) callBackStoreConnectionRole(ns *skf.NSConn, m skf.Message) 
 }
 
 func (rooms AllRoom) _OnNamespaceConnected(ns *skf.NSConn, m skf.Message) error {
-	generalLog(ns, m)
-
-	return nil
-
-	//👍 注意,在此測試 proto buf 傳送到Client
-	/*
-		var msg = pb.MessagePacket{
-			Type:    pb.MessagePacket_User,
-			Content: "hello, Proto Message Packet - User",
-			Tt:      timestamppb.New(time.Now()),
-			RoomId:  1,
-			From:    "Zorn",
-			To:      "Sam",
-		}
-		any, err := anypb.New(&msg)
-		if err != nil {
-			panic(err)
-		}
-		var packet = pb.ProtoPacket{
-			AnyItem: any,
-			Tt:      timestamppb.Now(),
-			Topic:   pb.TopicType_Message,
-			SN:      0,
-		}
-		marshal, err := proto.Marshal(&packet)
-		if err != nil {
-			panic(err)
-		}
-		//👍
-		c.Emit(skf.OnNamespaceConnected, marshal) */
+	//generalLog(ns, m)
 	return nil
 }
 func (rooms AllRoom) _OnNamespaceDisconnect(c *skf.NSConn, m skf.Message) error {
@@ -264,8 +237,10 @@ func (rooms AllRoom) _OnRoomJoin(c *skf.NSConn, m skf.Message) error {
 	return nil
 }
 
+// Message中必須要有玩家姓名
 func (rooms AllRoom) _OnRoomJoined(ns *skf.NSConn, m skf.Message) error {
-	//generalLog(c, m)
+	//generalLog(ns, m)
+	//g, u, er := rooms.enterProcess(ns, m)
 	g, u, er := rooms.enterProcess(ns, m)
 	if er != nil {
 		var err *BackendErr
@@ -275,16 +250,23 @@ func (rooms AllRoom) _OnRoomJoined(ns *skf.NSConn, m skf.Message) error {
 		return er
 	}
 
-	g.DevelopBroadcastTest(u)
+	//底下在測試封包傳送
+	//g.DevelopBroadcastTest(u)
 	//g.DevelopPrivatePayloadTest(u)
+
+	//送出桌面座位順序,觀眾資訊
+	slog.Info("_OnRoomJoined", slog.String("玩家姓名", u.Name))
+
+	g.RoomInfo(u)
+
 	return nil
 }
 
 // 前端必須曾經執行過  socket.emit(skf.OnRoomJoin); _OnRoomLeft才會生效
 // _OnRoomLeave先執行後才執行_OnRoomLeft
 func (rooms AllRoom) _OnRoomLeft(c *skf.NSConn, m skf.Message) error {
-	roomLog(c, m)
-	_, _, er := rooms.enterProcess(c, m)
+	//roomLog(c, m)
+	_, u, er := rooms.enterProcess(c, m)
 	if er != nil {
 		var err *BackendErr
 		if errors.As(er, &err) {
@@ -292,8 +274,7 @@ func (rooms AllRoom) _OnRoomLeft(c *skf.NSConn, m skf.Message) error {
 		}
 		return er
 	}
-	//房間人數減一
-	//g.CounterSub(c, m.Room)
+	slog.Info("_OnRoomLeft", slog.String("玩家姓名", u.Name))
 	return nil
 }
 
@@ -306,103 +287,3 @@ func (rooms AllRoom) _OnRoomLeave(c *skf.NSConn, m skf.Message) error {
 	// 坑: 當Client不正常斷線時, 這裡的 *skf.NSConn就已經是 Closed了
 	return nil
 }
-
-/*
-func (rooms AllRoom) _OnRoomJoined(c *skf.NSConn, m skf.Message) error {
-	//將加入方房間名稱存起來,在Game *Ring中或許會用到
-	//c.Conn.Set("info", struct{ roomName string }{m.Room})
-	roomLog(c, m)
-	//注意 : 當_OnRoomJoined被觸發時一併將User放到對應Room中
-	// 未來 UserJoinChannel還必須帶入玩家名稱
-	if _, ok := rooms[m.Room]; !ok {
-		return errors.New("無此遊戲房")
-	}
-
-	var res = rooms[m.Room].UserJoinChannel(c)
-
-	if res != nil {
-		c.Emit(ClnRoomEvents.ErrorSpace, []byte(res.Err.Error()))
-		return res.Err
-	}
-
-	//測試目的地 Private
-	//todo 先測試 Emit
-	//針對連入者發送Private訊息👍
-	c.Emit(ClnRoomEvents.Private, []byte(fmt.Sprintf("你已加入%s房間", m.Room)))
-	//c.Emit(game.ClnGameEvents.Private, []byte{0x01, 0x02, 0x03, 0x04})
-	//c.Emit(game.ClnGameEvents.Private, []byte{0x01})
-
-	//todo 測試 EmitBinary 傳送 Proto
-	//
-	//	var obj = cb.BidBoard{
-	//		Seat:      1972,
-	//		Forbidden: []uint8{0x1, 0xa, 0xc, 0x7f, 0x10, 0x5},
-
-	//	bytes, err := proto.Marshal(&obj)
-	//	if err != nil {
-	//		panic(err)
-	//	}
-	//	c.EmitBinary(game.ClnGameEvents.Private, bytes) //針對個別Connection送出 Proto
-
-
-	// TODO 只對房間廣播
-	//GR := rooms[m.Room]
-	// todo byte👍
-	//GR.BroadcastByte(game.ClnGameEvents.Private, 0x17)
-
-	// todo bytes 👍
-	//GR.BroadcastBytes(game.ClnGameEvents.Private, []byte())
-
-	// todo string 👍
-	//GR.BroadcastString(game.ClnGameEvents.Private, []byte("歡迎加入遊戲房"))
-
-	// todo proto 👍
-	//var obj = cb.BidBoard{
-	//	Seat:      1972,
-	//	Forbidden: []uint8{0x1, 0xa, 0xc, 0x7f, 0x10, 0x5},
-	//}
-	//GR.BroadcastProto(game.ClnGameEvents.Private, &obj)
-
-	counterService.RoomAdd(c, m.Room)
-	return nil
-} */
-
-/*
-func (rooms AllRoom) _OnRoomLeft(c *skf.NSConn, m skf.Message) error {
-	roomLog(c, m)
-	// 只對房間廣播
-	var (
-		GR  = rooms[m.Room]
-		res = GR.PlayerLeaveChannel(c)
-	)
-
-	//遊戲房,遊戲桌必須清空
-	// 坑: 這裡不要補獲錯誤,只要記log就好
-	// 若捕抓錯誤,就會發生中斷
-	fmt.Println(" ⎿ PlayerLeaveChannel err:", res.Err)
-	fmt.Println("   ⎿ Store release", res.Err)
-
-	if storeSeat := c.Conn.Get(game.KeySeat); storeSeat != nil {
-		c.Conn.Set(game.KeySeat, nil)
-		fmt.Printf("       ⎿ KeySeat %s released\n", storeSeat)
-	}
-	if storeSeat := c.Conn.Get(game.KeyPlayRole); storeSeat != nil {
-		c.Conn.Set(game.KeyPlayRole, nil)
-		fmt.Printf("       ⎿ KeyPlayRole %s released\n", storeSeat)
-	}
-
-	res = GR.UserLeaveChannel(c)
-	fmt.Println(" ⎿ UserLeaveChannel err:", res.Err)
-
-	//GR.BroadcastBytes(game.ClnGameEvents.PlayerOnLeave, []byte("someone 離開遊戲房間"))
-
-	c.Emit(skf.OnRoomLeft, []byte(fmt.Sprintf("已順利離開%s遊戲房", m.Room)))
-
-	counterService.RoomSub(c, m.Room)
-
-	time.Sleep(time.Millisecond * 300)
-
-	slog.Info("順利離開遊戲房間", slog.String("room🏠", m.Room))
-	return nil
-}
-*/

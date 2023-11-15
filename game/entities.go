@@ -28,7 +28,7 @@ System const
 const (
 
 	//RoomUsersLimit 一個房間容納人數限制
-	RoomUsersLimit = 4
+	RoomUsersLimit = 100
 
 	// PlayersLimit 一場遊戲人數限制
 	PlayersLimit int = 4
@@ -71,15 +71,16 @@ const (
 
 // _e:east _s:south _w:west _n:north, enum CbSeat
 const (
+	//1個byte = 8個bit,扣除表符號得最高位元,2的7次方
 	east  uint8 = 0x0      //0x00
 	south uint8 = 0x1 << 6 //0x40
 	west  uint8 = 0x2 << 6 //0x80
 	north uint8 = 0x3 << 6 //0xC0
 
-	CbEast  = CbSeat(east)  //東家
-	CbSouth = CbSeat(south) //南家
-	CbWest  = CbSeat(west)  //西家
-	CbNorth = CbSeat(north) //北家
+	CbEast  = CbSeat(east)  //東
+	CbSouth = CbSeat(south) //南
+	CbWest  = CbSeat(west)  //西
+	CbNorth = CbSeat(north) //北
 )
 
 // 儲存叫牌過程中最後由哪一方叫到王
@@ -304,7 +305,7 @@ func (ru *RoomUser) TicketString() string {
 	return ru.TicketTime.AsTime().Format("01/02 15:04:05")
 }
 
-// Connections 的所有觀眾連線
+// Connections 所有觀眾連線
 func (audiences Audiences) Connections() (connections []*skf.NSConn) {
 	for i := range audiences {
 		if audiences[i].NsConn.Conn.IsClosed() {
@@ -313,6 +314,19 @@ func (audiences Audiences) Connections() (connections []*skf.NSConn) {
 		connections = append(connections, audiences[i].NsConn)
 	}
 	return
+}
+
+// DumpNames 列出觀眾姓名, debug用
+func (audiences Audiences) DumpNames() {
+	fmt.Printf("======Audiences dump======\n")
+	for i := range audiences {
+		if audiences[i].NsConn.Conn.IsClosed() {
+			fmt.Sprintf("\t觀眾 %s 已斷線\n", audiences[i].Name)
+			continue
+		}
+		fmt.Sprintf(" 觀眾:%s(%s)\n", audiences[i].Name, CbSeat(audiences[i].Zone8))
+	}
+	fmt.Println("==============================")
 }
 
 /************************************************************************************/
@@ -392,6 +406,7 @@ const (
 var (
 	//常數
 	playerSeats = [4]uint8{east, south, west, north}
+	//playerSeats = [4]uint8{east, north, west, south}
 
 	//常數
 	deck = [NumOfCardsInDeck]uint8{club2, club3, club4, club5, club6, club7, club8, club9, club10, clubJ, clubQ, clubK, clubAce, diamond2, diamond3, diamond4, diamond5, diamond6, diamond7, diamond8, diamond9, diamond10, diamondJ, diamondQ, diamondK, diamondAce, heart2, heart3, heart4, heart5, heart6, heart7, heart8, heart9, heart10, heartJ, heartQ, heartK, heartAce, spade2, spade3, spade4, spade5, spade6, spade7, spade8, spade9, spade10, spadeJ, spadeQ, spadeK, spadeAce}
