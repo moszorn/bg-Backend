@@ -104,8 +104,12 @@ func (br *Counter) chanLoop() {
 		case arg := <-br.roomLeaves:
 			if table, ok := br.allRoomsJoins[arg.roomName]; ok {
 
-				br.roomers--
-				table.Joiner--
+				if br.roomers >= 1 {
+					br.roomers--
+				}
+				if table.Joiner >= 1 {
+					table.Joiner--
+				}
 
 				br.BroadcastRoomJoins <- broadcastArg{
 					roomNumOfs: &cb.LobbyTable{
@@ -119,7 +123,11 @@ func (br *Counter) chanLoop() {
 				}
 			}
 		case nsConn := <-br.lobbyLeaves:
-			br.joiners-- // joiner 指的是在大廳未進入到房間裡的人數
+
+			if br.joiners >= 1 {
+				br.joiners-- // joiner 指的是在大廳未進入到房間裡的人數
+			}
+
 			br.BroadcastJoins <- broadcastArg{
 				lobbyNumOfs: &cb.LobbyNumOfs{
 					Joiner: br.joiners,

@@ -40,6 +40,10 @@ type (
 	LobbyService interface {
 		_OnNamespaceConnected(c *skf.NSConn, m skf.Message) error
 		_OnNamespaceDisconnect(c *skf.NSConn, m skf.Message) error
+		_OnRoomJoin(c *skf.NSConn, m skf.Message) error
+		_OnRoomJoined(c *skf.NSConn, m skf.Message) error
+		_OnRoomLeave(c *skf.NSConn, m skf.Message) error
+		_OnRoomLeft(c *skf.NSConn, m skf.Message) error
 	}
 
 	// RoomService 代表 Room Space, request的入口介面
@@ -129,6 +133,10 @@ func newSpaceManager(rooms RoomService, lobby LobbyService) SpaceManager {
 	lobbyEventHandlers := map[string]skf.MessageHandlerFunc{
 		skf.OnNamespaceConnected:  lobby._OnNamespaceConnected,
 		skf.OnNamespaceDisconnect: lobby._OnNamespaceDisconnect,
+		skf.OnRoomJoin:            lobby._OnRoomJoin,
+		skf.OnRoomJoined:          lobby._OnRoomJoined,
+		skf.OnRoomLeave:           lobby._OnRoomLeave,
+		skf.OnRoomLeft:            lobby._OnRoomLeft,
 	}
 
 	mg := map[string]eventsHandler{

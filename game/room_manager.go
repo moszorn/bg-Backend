@@ -69,7 +69,7 @@ type (
 		//表示遊戲已經幾人動作了(回合數)
 		aa uint8
 
-		//玩家是否已入座
+		//玩家是否入座
 		isOnSeat bool
 	}
 
@@ -135,7 +135,7 @@ func newRoomManager(shutdown context.Context) *RoomManager {
 			zone: playerSeats[i],
 			player: &RoomUser{
 				NsConn:      nil,
-				PlayingUser: pb.PlayingUser{Zone: uint32(playerSeats[i])},
+				PlayingUser: &pb.PlayingUser{Zone: uint32(playerSeats[i])},
 				Zone8:       playerSeats[i],
 			}, /*player一經初始化後永不銷毀*/
 		}
@@ -153,8 +153,6 @@ func newRoomManager(shutdown context.Context) *RoomManager {
 
 // Start RoomManager開始幹活,由Game執行
 func (mr *RoomManager) Start() {
-	slog.Debug(fmt.Sprintf("RoomManager(%s) Start", mr.g.name))
-
 	start := true
 	for start {
 		select {
@@ -166,67 +164,89 @@ func (mr *RoomManager) Start() {
 		//坑: 這裡只能針對 gateway channel
 
 		case tracking := <-mr.door:
-			user := tracking.Question
-			switch user.Tracking {
+			switch tracking.Question.Tracking {
 			case EnterRoom:
+				user := tracking.Question
 				result := chanResult{}
+
 				if _, exist := mr.getRoomUser(user.NsConn); exist {
 					result.err = ErrUserInRoom
 				}
 				if mr.ticketSN > RoomUsersLimit {
 					result.err = ErrRoomFull
+				}
+				if user.Zone8 == valueNotSet {
+					slog.Error("RoomManager(Loop-EnterRoom)", utilog.Err(fmt.Errorf("%s(%d) %s 進入房間方位(%[1]s)不存在", CbSeat(user.Zone8), user.Zone8, user.Name)))
 				} else {
-
 					user.Ticket()
 					//房間進入者流水編號累增
 					mr.ticketSN++
 
 					// 玩家加入遊戲房間
 					mr.Users[user.Zone8][user.NsConn] = user
+					result.playerName = user.Name
 					result.err = nil //成功入房
 					result.isGameStart = mr.players >= 4
 				}
 				tracking.Response <- result
 			case LeaveRoom:
+				user := tracking.Question
+				var leaverName string
+				if zone, ok := mr.Users[user.Zone8]; ok {
+					if roomUser, ok := zone[user.NsConn]; ok {
+						slog.Debug("RoomManager(Loop-LeaveRoom)", slog.String("移出房間", roomUser.Name))
+						leaverName = roomUser.Name
+						delete(zone, user.NsConn)
 
-				// 移除離開玩家. EnterRoom時的value也一並移除參考
-				delete(mr.Users[user.Zone8], user.NsConn)
+						//房間進入者流水編號遞減
+						mr.ticketSN--
 
-				//房間進入者流水編號遞減
-				mr.ticketSN--
+					}
+				} else {
+					slog.Error("RoomManager(Loop-LeaveRoom)", utilog.Err(fmt.Errorf("zone:%s(%d) %s不在房間任何zone中", CbSeat(user.Zone8), user.Zone8, user.Name)))
+				}
 
 				//為何這裡需要將設定user為nil,是因要釋放在UserLeave時的記憶體參考
 				user = nil
-
 				tracking.Response <- chanResult{
 					err:         nil,
 					isGameStart: mr.players >= 4,
+					playerName:  leaverName,
 				}
 			case EnterGame:
-				//外界在呼叫 EnterGame前,要先判斷遊戲是否開始,玩家是否已經入桌
-				seat, gameStart := mr.playerJoin(user, pb.SeatStatus_SitDown)
-
+				user := tracking.Question
+				/*
+				 result.seat 表示入座位置
+				 result.playerName 表示入座者姓名
+				*/
 				result := chanResult{}
-				result.seat = seat /* seat若為valueNotSet 表桌已滿,並且gameStart會是 true*/
-				result.isGameStart = gameStart
-				result.isOnSeat = seat != valueNotSet
+				result.seat, result.playerName, result.isGameStart = mr.playerJoin(user, pb.SeatStatus_SitDown)
+				result.isOnSeat = result.seat != valueNotSet
 				result.err = nil
 				tracking.Response <- result
 			case LeaveGame:
-				seat, gameStart := mr.playerJoin(user, pb.SeatStatus_StandUp)
+				user := tracking.Question
+				/*
+				 result.seat 表示離座位置
+				 result.playerName 表示離座者姓名
+				*/
 				result := chanResult{}
-				result.seat = seat
-				result.isOnSeat = seat != valueNotSet
-				result.isGameStart = gameStart
+				result.seat, result.playerName, result.isGameStart = mr.playerJoin(user, pb.SeatStatus_StandUp)
 				result.err = nil
 				tracking.Response <- result
 			}
 
 		case crwa := <-mr.table:
-			//crwa (ChanResponseWithArgument)
 			req := crwa.Question
 			switch req.topic {
 			case IsPlayerOnSeat:
+				/*
+				 result.seat 表示玩家座位
+				 result.isOnSeat 表示玩家是否遊戲中
+				 result.playerName 表示玩家姓名
+				*/
+				result := chanResult{}
+
 				found := false
 				limit := PlayersLimit
 				seat := mr.Value.(*tablePlayer)
@@ -234,17 +254,18 @@ func (mr *RoomManager) Start() {
 					limit--
 					if seat.player != nil && seat.player == req.user {
 						found = true
+						result.seat = seat.zone
 					}
 					mr.Ring = mr.Next()
 					seat = mr.Value.(*tablePlayer)
 				}
 
-				result := chanResult{}
 				if found { //表存已在遊戲中
 					result.isOnSeat = true
 				} else {
 					result.isOnSeat = false
 				}
+				result.playerName = req.player.Name
 				result.err = nil
 				crwa.Response <- result
 
@@ -306,15 +327,26 @@ func (mr *RoomManager) Start() {
 				var ringItem *tablePlayer
 				ringItem, result.isOnSeat = mr.findPlayer(req.player.Zone8)
 
-				//不管isOnSeat有否在座位上,都登記尋找的玩家名稱
-				result.playerName = ringItem.player.Name
-				if result.isOnSeat {
-					//找到指定玩家連線
-					result.player = ringItem.player.NsConn
+				if ringItem == nil || !result.isOnSeat {
+					result.player = nil
+					result.playerName = req.player.Name
+					result.err = errors.New(fmt.Sprintf("(%s)%s不在遊戲中", CbSeat(req.player.Zone8), req.player.Name))
+				} else {
+					slog.Debug("RoomManager(Loop-_FindPlayer)",
+						slog.String("姓名", ringItem.player.Name),
+						slog.String("座位(Zone8)", fmt.Sprintf("%s", CbSeat(ringItem.player.Zone8))),
+						slog.Int("seat(zone)", int(ringItem.zone)),
+						/* slog.String("Conn", shortConnID(ringItem.player.NsConn)),*/
+					)
+					//不管isOnSeat有否在座位上,都登記尋找的玩家名稱
+					result.playerName = ringItem.player.Name
+					if result.isOnSeat {
+						//找到指定玩家連線
+						result.player = ringItem.player.NsConn
+					}
+					result.err = nil
 				}
-				result.err = nil
 				crwa.Response <- result
-
 			case _GetTablePlayers:
 				result := chanResult{}
 				result.e, result.s, result.w, result.n = mr.tablePlayers()
@@ -339,6 +371,7 @@ func (mr *RoomManager) Start() {
 			} /*eofSwitch*/
 
 		case send := <-mr.broadcastMsg:
+
 			msg := send.Question
 			send.Response <- mr.broadcast(msg)
 
@@ -365,16 +398,52 @@ func (mr *RoomManager) getZoneRoomUser(nsconn *skf.NSConn, zone uint8) (found *R
 	return
 }
 
-// RoomInfo 房間人數,桌中座位順序與座位狀態, 使用者進入房間時需要此資訊
-func (mr *RoomManager) RoomInfo(user *RoomUser) {
-	slog.Info("RoomInfo", slog.String("user", user.Name), slog.String("zone", "入房時尚未存在"), slog.Any("連線", shortConnID(user.NsConn)))
+// KickOutBrokenConnection 不正常連線(斷線)踢出房間與遊戲, zone若為
+func (mr *RoomManager) KickOutBrokenConnection(ns *skf.NSConn, kickZone uint8, kickInGame bool) {
+	slog.Debug("KickOutBrokenConnectionFromRoom",
+		slog.String(fmt.Sprintf("連線:%s", shortConnID(ns)),
+			fmt.Sprintf("區域:%s 遊戲中:%t", CbSeat(kickZone), kickInGame)))
+
+	kick := &RoomUser{
+		NsConn: ns,
+		PlayingUser: &pb.PlayingUser{
+			Zone:      uint32(kickZone),
+			IsSitting: kickInGame,
+		},
+		Zone8:          kickZone,
+		IsClientBroken: true,
+	}
+
+	if kickInGame {
+		mr.PlayerLeave(kick)
+	}
+	mr.UserLeave(kick)
+
+	/*
+		kick := &RoomUser{
+			NsConn:   ns,
+			Tracking: LeaveGame,
+			Zone8:    zone,
+			PlayingUser: &pb.PlayingUser{
+				IsSitting: gameKickOut,
+			},
+		}
+		mr.UserLeave(kick)
+	*/
+}
+
+// UserJoinTableInfo 房間人數,桌中座位順序與座位狀態, 使用者進入房間時需要此資訊
+func (mr *RoomManager) UserJoinTableInfo(user *RoomUser) {
+
+	slog.Info("UserJoinTableInfo", slog.String("傳入參數", fmt.Sprintf("name:%s zone8:%s zone:%s conn:%s", user.Name, CbSeat(user.Zone8), CbSeat(user.Zone), shortConnID(user.NsConn))))
+
 	tqs := &tableRequest{
 		topic: _GetTableInfo,
 	}
 
 	rep := mr.table.Probe(tqs)
 	if rep.err != nil {
-		slog.Error("取得RoomInfo錯誤", utilog.Err(rep.err))
+		slog.Error("UserJoinTableInfo錯誤", utilog.Err(rep.err))
 	}
 
 	var pp = pb.TableInfo{}
@@ -386,22 +455,22 @@ func (mr *RoomManager) RoomInfo(user *RoomUser) {
 	pp.Players = make([]*pb.PlayingUser, 0, PlayersLimit)
 
 	for i := range rep.seatOrders {
+		//填充座位空位順序
+		pp.Players = append(pp.Players, rep.seatOrders[i].PlayingUser)
 
-		pp.Players = append(pp.Players, &rep.seatOrders[i].PlayingUser)
-
-		//觀眾資訊(也就是房間中的人)包含在座位上的玩家
+		//填充觀眾資訊-之座位上的玩家
 		if rep.seatOrders[i].PlayingUser.Name != "" {
-			pp.Audiences = append(pp.Audiences, &rep.seatOrders[i].PlayingUser)
+			pp.Audiences = append(pp.Audiences, rep.seatOrders[i].PlayingUser)
 		}
 	}
 
 	for i := range rep.audiences {
-		//觀眾資訊(也就是房間中的人)也包含沒在座位上
-		pp.Audiences = append(pp.Audiences, &rep.audiences[i].PlayingUser)
+		//填充觀眾資訊-之沒在座位上的觀眾
+		pp.Audiences = append(pp.Audiences, rep.audiences[i].PlayingUser)
 	}
 
 	//最後將新進房間的使用者也加入觀眾席
-	pp.Audiences = append(pp.Audiences, &user.PlayingUser)
+	pp.Audiences = append(pp.Audiences, user.PlayingUser)
 
 	payload := payloadData{
 		ProtoData:   &pp,
@@ -409,14 +478,14 @@ func (mr *RoomManager) RoomInfo(user *RoomUser) {
 	}
 
 	if err := mr.send(user.NsConn, ClnRoomEvents.UserPrivateTableInfo, payload); err != nil {
-		slog.Error("RoomInfo proto錯誤", utilog.Err(err))
+		slog.Error("UserJoinTableInfo proto錯誤", utilog.Err(err))
 	}
 }
 
 // UserJoin 使用者進入房間, 必須參數RoomUser {*skf.NSConn, userName, userZone}
 func (mr *RoomManager) UserJoin(user *RoomUser) {
 	// UserJoin 姓名="" user.Zone8=東家 ""=東家
-	slog.Info("UserJoin", slog.String("姓名", user.PlayingUser.Name), slog.Int("Zone8", int(user.Zone8)), slog.String("zone8", fmt.Sprintf("%s", CbSeat(user.Zone8))))
+	slog.Info("UserJoin-進入房間", slog.String("姓名", user.PlayingUser.Name), slog.Bool("入座", user.IsSitting), slog.String("zone8", fmt.Sprintf("%s(%d)", CbSeat(user.Zone8), user.Zone)))
 
 	//TBC 好像 Tracking只用來當成 switch的判斷,不需要使用 preTracking 這個機制
 	// TODO 移除 preTracking
@@ -441,16 +510,29 @@ func (mr *RoomManager) UserJoin(user *RoomUser) {
 		return
 	}
 
-	slog.Debug("UserJoin", slog.Bool("CounterAdd", true), slog.String("roomName", mr.g.name))
+	//使用者不正常斷線離開時,KeyInRoomStatus可以用來判斷
+	// 設定KeyRoom表示進入房間,這也表示也者定了進入房間的Zone (KeyZone)
+	user.NsConn.Conn.Set(KeyRoom, mr.g.name)  //表示進入房間
+	user.NsConn.Conn.Set(KeyZone, user.Zone8) //表示進入哪個區
+
 	mr.g.CounterAdd(user.NsConn, mr.g.name)
 
 	//廣播房間有人進入房間
-	mr.BroadcastBytes(&user.Name, ClnRoomEvents.UserJoin, mr.g.name, []byte(user.Name))
+	mr.BroadcastBytes(nil, ClnRoomEvents.UserJoin, mr.g.name, []byte(user.Name))
 
+	//TODO: 將當時房間狀態送出給進入者 (想法: Game必須一併傳入當時桌面情況進來,因為room_manager只管發送與廣播)
 }
 
 // UserLeave 使用者離開房間
 func (mr *RoomManager) UserLeave(user *RoomUser) {
+	slog.Debug("UserLeave",
+		slog.String("傳入資訊",
+			fmt.Sprintf("姓名:%s  遊戲中:%t  區域:%s(%d)", user.Name, user.IsSitting, CbSeat(user.Zone8), user.Zone8)))
+
+	//先判斷連線有否在遊戲中
+	if user.NsConn.Conn.Get(KeyGame) != nil || user.IsSitting == true {
+		mr.PlayerLeave(user)
+	}
 
 	//TBC 好像 Tracking只用來當成 switch的判斷,不需要使用 preTracking 這個機制
 	// TODO 移除 preTracking
@@ -470,21 +552,35 @@ func (mr *RoomManager) UserLeave(user *RoomUser) {
 		return
 	}
 
-	fmt.Printf("================ CounterSub : user.NsConn: %p\n", user.NsConn)
-
-	//移到 NamespaceDisconnected
+	//正常離開, 不正常離開的處理在 service.room.go - _OnRoomLeft
 	mr.g.CounterSub(user.NsConn, mr.g.name)
-
-	//告知client切換回大廳
-	user.NsConn.Emit(skf.OnRoomLeft, nil)
-	//ns.Emit(skf.OnRoomLeft, []byte(fmt.Sprintf("已順利離開%s遊戲房", mr.roomNameId)))
+	//告知client切換回大廳,後端只要移除Conn Store,前端會執行轉頁面到Lobby namespace
+	user.NsConn.Conn.Set(KeyRoom, nil)
+	user.NsConn.Conn.Set(KeyZone, nil)
 
 	//TODO 廣播有人離開房間
+	mr.BroadcastString(user.NsConn, ClnRoomEvents.UserLeave, mr.g.name, user.Name)
 
+	//不正常斷線, isClientBroken在KickOutBrokenConnection被設定
+	if user.IsClientBroken {
+		return
+	}
+
+	//正常斷線(離開房間,通知前端切換場景)
+	err := mr.SendBytes(user.NsConn, ClnRoomEvents.UserPrivateLeave, []byte(user.Name))
+	if err != nil {
+		if errors.Is(err, ErrClientBrokenOrRefresh) {
+			slog.Error("UserLeave", slog.String("發送通知訊息失敗", response.playerName), utilog.Err(err))
+		}
+		if errors.Is(err, ErrConn) {
+			slog.Error("UserLeave", slog.String("發送通知訊息失敗", response.playerName), utilog.Err(err))
+		}
+	}
 }
 
-// PlayerJoin表示使用者要入桌入座,或離開座位
-func (mr *RoomManager) playerJoin(user *RoomUser, flag pb.SeatStatus) (zoneSeat uint8, isGameStart bool) {
+// playerJoin表示使用者要入桌入座,或離開座位
+// 坐下: zoneSeat 表示坐定的位置 º 離座: zoneSeat 表示離座位置
+func (mr *RoomManager) playerJoin(user *RoomUser, flag pb.SeatStatus) (zoneSeat uint8, userName string, isGameStart bool) {
 	/*
 		 user 入座的使用者, flag 旗標表示入座還是離座
 		 flag
@@ -498,6 +594,7 @@ func (mr *RoomManager) playerJoin(user *RoomUser, flag pb.SeatStatus) (zoneSeat 
 	atTime := pb.LocalTimestamp(time.Now())
 
 	zoneSeat = valueNotSet
+
 	var seatAt *tablePlayer
 	for i := 0; i < PlayersLimit; i++ {
 		seatAt = mr.Value.(*tablePlayer)
@@ -507,20 +604,24 @@ func (mr *RoomManager) playerJoin(user *RoomUser, flag pb.SeatStatus) (zoneSeat 
 		case pb.SeatStatus_SitDown:
 			// Ring player.NsConn == nil 表示有空位
 			if seatAt.player.NsConn == nil {
-
 				//注意用copy的
 				seatAt.player.NsConn = user.NsConn
-				seatAt.player.TicketTime = atTime /*入房間時間*/
+				seatAt.player.TicketTime = atTime
 				seatAt.player.Name = user.Name
 
 				zoneSeat = seatAt.zone // 入座
 				user.Tracking = EnterGame
 				mr.players++
 				//回傳的zoneSeat不可能是 0x0
-				return zoneSeat, mr.players >= 4
+				return zoneSeat, seatAt.player.Name, mr.players >= 4
 			}
 		case pb.SeatStatus_StandUp:
 			if seatAt.player.NsConn != nil && seatAt.player.NsConn == user.NsConn {
+				slog.Debug("playerJoin", slog.String("StandUp 👍 ", fmt.Sprintf("座位:%s(%p) 連線:%p", CbSeat(seatAt.zone), seatAt.player.NsConn, user.NsConn)))
+
+				//回傳離開座位者姓名
+				userName = seatAt.player.Name
+
 				seatAt.player.NsConn = nil // 離座
 				seatAt.player.Play = uint32(valueNotSet)
 				seatAt.player.Bid = uint32(valueNotSet)
@@ -531,17 +632,18 @@ func (mr *RoomManager) playerJoin(user *RoomUser, flag pb.SeatStatus) (zoneSeat 
 
 				user.Tracking = EnterRoom
 				mr.players--
-				//回傳的zoneSeat不可能是 0x0
-				return zoneSeat, mr.players >= 4
+				return zoneSeat, userName, mr.players >= 4
 			}
 		}
 	}
+	slog.Debug("playerJoin", slog.String("FYI", fmt.Sprintf("(SitDown)=>遊戲座位已滿 | 或 (StandUp)玩家尚未入座(StandUp)◦ 目前桌中人數:%d", mr.players)))
 	// 可能位置已滿,zoneSeat會是 valueNotSet,所以呼叫者可以判斷
-	return zoneSeat, mr.players >= 4
+	return zoneSeat, userName, mr.players >= 4
 }
 
 // PlayerJoin 加入, 底層透過呼叫 playerJoin, 最後判斷使否開局,與送出發牌
 func (mr *RoomManager) PlayerJoin(user *RoomUser) {
+	slog.Info("PlayerJoin", slog.String("傳入參數", fmt.Sprintf("%s %s(%d) %s", user.Name, CbSeat(user.Zone8), user.Zone8, shortConnID(user.NsConn))))
 
 	user.Tracking = EnterGame
 
@@ -565,10 +667,7 @@ func (mr *RoomManager) PlayerJoin(user *RoomUser) {
 		return
 	}
 
-	//第0步: 儲存seat到Connection Store,表示這個Connection是一個玩家
-	user.NsConn.Conn.Set(KeySeat, response.seat)
-	slog.Debug("PlayerJoin", slog.Int("設定KeySeat", int(response.seat)), slog.String("value", fmt.Sprintf("%s", CbSeat(response.seat))))
-	slog.Info("PlayerJoin", slog.Int("seat", int(response.seat)), slog.String("座位", fmt.Sprintf("%s", CbSeat(response.seat))))
+	user.NsConn.Conn.Set(KeyGame, response.seat) //表示玩家已進入遊戲中,設定遊戲中位置
 
 	// 第一步: 上桌
 	// 告訴玩家你已經上桌,前端必須處理, 往右移1位是因為舊的code是這樣寫的 TBC
@@ -577,13 +676,15 @@ func (mr *RoomManager) PlayerJoin(user *RoomUser) {
 	payload := payloadData{
 		ProtoData: &pb.PlayingUser{
 			Name:       user.Name,
-			Zone:       user.Zone,
+			Zone:       uint32(response.seat),
 			TicketTime: pb.LocalTimestamp(time.Now()),
+			IsSitting:  response.isOnSeat,
 		},
+		Player:      response.seat,
 		PayloadType: ProtobufType,
 	}
 
-	mr.SendPayloads(ClnRoomEvents.TablePrivateOnSeat, payload)
+	mr.SendPayloadsToPlayer(ClnRoomEvents.TablePrivateOnSeat, payload)
 
 	// 廣播已經有人上桌,前端必須處理(Disable上座功能),並顯示誰上座
 	mr.SendPayloadsToZone(ClnRoomEvents.TableOnSeat, user.NsConn, payload)
@@ -636,21 +737,13 @@ func (mr *RoomManager) PlayerJoin(user *RoomUser) {
 
 // PlayerLeave 加入, 底層透過呼叫 playerJoin, 進行離桌程序
 func (mr *RoomManager) PlayerLeave(user *RoomUser) {
+	slog.Info("PlayerLeave", slog.String("傳入資訊", fmt.Sprintf("name:%s 入桌中:%t 欲離開%s(%d)", user.Name, user.IsSitting, CbSeat(user.Zone8), user.Zone8)))
 
-	slog.Info("PlayerLeave", slog.String("name", user.Name), slog.String("seat", fmt.Sprintf("%s", CbSeat(user.Zone8))))
 	user.Tracking = LeaveGame
 
 	var response chanResult
 
-	//Probe內部用user name查詢是否user已經入房間
 	response = mr.door.Probe(user)
-
-	/*
-		result.seat = seat
-		result.isOnSeat = seat != valueNotSet
-		result.isGameStart = gameStart
-		result.err = nil
-	*/
 
 	if response.err != nil {
 		slog.Debug("PlayerLeave", utilog.Err(response.err))
@@ -661,24 +754,22 @@ func (mr *RoomManager) PlayerLeave(user *RoomUser) {
 		return
 	}
 
-	// 表示離座發生問題
-	if response.isOnSeat {
-		user.NsConn.Emit(ClnRoomEvents.ErrorRoom, []byte("無法離座"))
+	// 玩家不在遊戲中
+	if response.seat == valueNotSet {
+		slog.Debug("PlayerLeave", utilog.Err(fmt.Errorf("玩家%s不在遊戲中", shortConnID(user.NsConn))))
 		return
 	}
 
-	if storeSeat := user.NsConn.Conn.Get(KeySeat); storeSeat != nil {
-		user.NsConn.Conn.Set(KeySeat, nil)
-		slog.Debug("PlayerLeave", slog.Any("keySeat", storeSeat), slog.Bool("released", true))
-	}
-	if storeSeat := user.NsConn.Conn.Get(KeyPlayRole); storeSeat != nil {
-		user.NsConn.Conn.Set(KeyPlayRole, nil)
-		slog.Debug("PlayerLeave", slog.Any("keyPlayRole", storeSeat), slog.Bool("released", true))
-	}
+	//正常離開, 不正常離開處理在 service.room.go - _OnRoomLeft
+	user.NsConn.Conn.Set(KeyGame, nil)
+	user.NsConn.Conn.Set(KeyPlayRole, nil)
+
+	//避免 KickOutBrokenConnection 中,執行UserLeave時再執行一次PlayerLeave
+	user.IsSitting = false
 
 	payload := payloadData{
 		ProtoData: &pb.PlayingUser{
-			Name:       user.Name,
+			Name:       user.Name, //user.Name若為空表示玩家斷線,或browser refresh
 			Zone:       uint32(response.seat),
 			TicketTime: pb.LocalTimestamp(time.Now()),
 		},
@@ -686,8 +777,8 @@ func (mr *RoomManager) PlayerLeave(user *RoomUser) {
 		PayloadType: ProtobufType,
 	}
 
-	//成功離開座位, 前端必須處理
-	mr.SendPayloads(ClnRoomEvents.TablePrivateOnLeave, payload)
+	//TBC 因為Client可能不正常離線(離桌)所以可能已經失去連線,所以在此不需要再送訊號通知做私人通知
+	//mr.SendBytes(user.NsConn, ClnRoomEvents.TablePrivateOnLeave, nil)
 
 	//成功離開座位, 前端必須處理
 	// 廣播已經有人上桌,前端必須處理(Disable上座功能),並顯示誰上座
@@ -739,7 +830,7 @@ func (mr *RoomManager) FindPlayer(seat uint8) (nsConn *skf.NSConn, playerName st
 	}
 	rep := mr.table.Probe(tps)
 	if rep.err != nil {
-		panic(rep.err)
+		slog.Error("FindPlayer", utilog.Err(rep.err))
 		return
 	}
 
@@ -824,10 +915,6 @@ func (mr *RoomManager) zoneUsers() (users []*RoomUser, ePlayer, sPlayer, wPlayer
 		case north:
 			player = nPlayer.NsConn
 		}
-
-		// 傾印出存在各區人數
-		slog.Debug(fmt.Sprintf("zoneUsers-%s Zone", CbSeat(zone)), slog.Int("目前人數", len(mr.Users[zone])))
-
 		// 限觀眾連線
 		for conn, roomUser := range mr.Users[zone] {
 			if !conn.Conn.IsClosed() && conn != player {
@@ -860,6 +947,9 @@ func (mr *RoomManager) tablePlayers() (e, s, w, n *RoomUser) {
 
 // 回傳以第一個空位為始點的環形陣列,order 第一個元素就是空位的seat,用於使用者進入房間的位置方位
 func (mr *RoomManager) lastLeaveOrder() (order [4]*RoomUser) {
+	//Bug
+	// bug 進入瀕繁,位置會亂跑
+
 	var limit = PlayersLimit
 	order = [PlayersLimit]*RoomUser{}
 
@@ -879,10 +969,13 @@ func (mr *RoomManager) lastLeaveOrder() (order [4]*RoomUser) {
 	//此時環形會是以第一個找到的空位為始點
 	i := 0
 	mr.Do(func(seat any) {
-		order[i] = (seat.(*tablePlayer)).player
+		// 坑: 這裡不懂
+		var user *RoomUser = (seat.(*tablePlayer)).player
+		user.Zone = uint32(user.Zone8)
+		order[i] = user
 		i++
 	})
-	return //最後離座順序
+	return
 }
 
 // PlayersCardValue 撈取四位玩家打出的牌, 回傳的順序固定為 e(east), s(south), w(west), n(north)
@@ -1073,27 +1166,41 @@ func (mr *RoomManager) send(nsConn *skf.NSConn, eventName string, payload payloa
 	return nil
 }
 
-// SendPayloads 針對某個Player(玩家)發送多筆訊息,或一筆訊息
-func (mr *RoomManager) SendPayloads(eventName string, payloads ...payloadData) {
+// SendBytes 對個別連線送出byte,或 bytes
+func (mr *RoomManager) SendBytes(nsConn *skf.NSConn, eventName string, bytes []uint8) error {
+
+	if nsConn == nil || nsConn.Conn.IsClosed() {
+		//不正常斷線,或Client Refresh會發生
+		return ErrClientBrokenOrRefresh
+	}
+	ok := nsConn.EmitBinary(eventName, bytes)
+	if !ok {
+		return ErrConn
+	}
+	return nil
+}
+
+// SendPayloadsToPlayer 針對某個仍在遊戲桌上的Player(玩家)發送多筆訊息,或一筆訊息
+func (mr *RoomManager) SendPayloadsToPlayer(eventName string, payloads ...payloadData) {
+	slog.Debug("SendPayloadsToPlayer",
+		slog.String("發送", fmt.Sprintf("%s(%d)", CbSeat(payloads[0].Player), payloads[0].Player)))
 
 	if len(payloads) == 0 {
-		panic("SendPayloads 屬性player必須要有值(seat)")
+		panic("SendPayloadsToPlayer 屬性player必須要有值(seat)")
 	}
 
-	tps := &tableRequest{
-		topic:  _FindPlayer,
-		player: &RoomUser{Zone8: payloads[0].Player}, /*[0]:第一個樣本*/
-	}
-	rep := mr.table.Probe(tps)
-	if rep.err != nil {
-		slog.Error("找尋玩家連線失敗(SendPayloads)", utilog.Err(rep.err))
+	conn, name, found, _ := mr.FindPlayer(payloads[0].Player)
+	slog.Debug("SendPayloadsToPlayer", slog.String("姓名", name), slog.Bool("found", found))
+
+	if !found {
+		slog.Error("SendPayloadsToPlayer", utilog.Err(fmt.Errorf("未找到%s可進行發送", name)))
 		return
 	}
 
 	for i := range payloads {
-		err := mr.send(rep.player, eventName, payloads[i])
+		err := mr.send(conn, eventName, payloads[i])
 		if err != nil {
-			slog.Error("payload發送失敗(SendPayloads)", utilog.Err(err))
+			slog.Error("payload發送失敗(SendPayloadsToPlayer)", utilog.Err(err))
 			continue
 		}
 	}
@@ -1143,8 +1250,9 @@ func (mr *RoomManager) SendPayloadToPlayers(eventName string, payloads ...payloa
 	}
 }
 
-// SendPayloadsToZone 針對觀眾(不包含指定玩家exclude,但包含另三家玩家)發送訊息,
+// SendPayloadsToZone 針對所有的觀眾(但不包含玩家exclude,但含另三家玩家)發送訊息, exclude 排除連線
 func (mr *RoomManager) SendPayloadsToZone(eventName string, exclude *skf.NSConn, payloads ...payloadData) {
+	slog.Debug("SendPayloadsToZone", slog.String("發送", fmt.Sprintf("接收人數:%d , 排除發送者:%t", len(payloads), exclude != nil)))
 	tqs := &tableRequest{
 		topic: _GetZoneUsers,
 	}
@@ -1171,8 +1279,10 @@ func (mr *RoomManager) SendPayloadsToZone(eventName string, exclude *skf.NSConn,
 	}
 
 	connections := rep.audiences.Connections()
+
 	// 0表示0個玩家, <4 表示排除自己另三個玩家
-	slog.Debug("SendPayloadsToZone", slog.Int("發送玩家個數", len(include)), slog.Int("發送非玩家個數", len(connections)))
+	slog.Debug("SendPayloadsToZone", slog.Int("發送玩家", len(include)), slog.Int("發送觀眾", len(connections)))
+
 	if len(include) > 0 && len(include) < 4 {
 		//將自己以外的三位玩家也加入到廣播觀眾群
 		for i := range include {
@@ -1232,7 +1342,7 @@ func (mr *RoomManager) broadcast(b *broadcastRequest) (err AppErr) {
 		for Ns, user := range mr.Users[zone] {
 
 			//略過發言訊息者
-			if isSkip && b.sender == Ns {
+			if b.sender == Ns && isSkip {
 				continue
 			}
 
@@ -1270,22 +1380,11 @@ func (mr *RoomManager) broadcast(b *broadcastRequest) (err AppErr) {
 }
 
 // broadcastMsg 這是獨立的方法不是 RoomManager的屬性,將傳入參數生成 skf.Message
-func broadcastMsg(sender *skf.NSConn, senderName *string, eventName, roomName string, serializedBody []uint8, errInfo error) (msg *skf.Message) {
+func broadcastMsg(eventName, roomName string, serializedBody []uint8, errInfo error) (msg *skf.Message) {
 	//sender sender不為nil情況下只會發生在傳送聊天訊息時,通常sender會是nil
 	// roomName送到那個Room (TBC 要與前端確認)
 	// serializedBody 發送的封包
 	// errInfo 發送給前端必須處理的錯誤訊息
-	var from string
-
-	//若有指定連線表示他就是發送者(from)
-	if sender != nil {
-		//TODO : 不應該是 sender.String(), 應該是 RoomUser.Name
-		from = sender.String()
-	}
-	//若有指定senderName ,發送者就是
-	if senderName != nil {
-		from = *senderName
-	}
 
 	msg = new(skf.Message)
 	msg.Namespace = RoomSpaceName
@@ -1293,10 +1392,6 @@ func broadcastMsg(sender *skf.NSConn, senderName *string, eventName, roomName st
 	msg.Event = eventName
 	msg.Body = serializedBody
 	msg.SetBinary = true
-
-	// Bug 這裡有問題,有時間再看, 因為FromExplicit是針對Exchagne Server用 (官方文件)
-	msg.FromExplicit = from
-
 	msg.Err = errInfo
 	return
 }
@@ -1308,7 +1403,7 @@ func (mr *RoomManager) BroadcastChat(sender *skf.NSConn, eventName, roomName str
 	// serializedBody 發送的封包
 	// errInfo 發送給前端必須處理的錯誤訊息
 	b := &broadcastRequest{
-		msg:    broadcastMsg(sender, nil, eventName, roomName, serializedBody, errInfo),
+		msg:    broadcastMsg(eventName, roomName, serializedBody, errInfo),
 		sender: sender,
 		to:     nil,
 		chat:   true,
@@ -1317,31 +1412,34 @@ func (mr *RoomManager) BroadcastChat(sender *skf.NSConn, eventName, roomName str
 }
 
 // BroadcastBytes 發送 []uint8 封包給所有人
-func (mr *RoomManager) BroadcastBytes(senderName *string, eventName, roomName string, serializedBody []uint8) {
+func (mr *RoomManager) BroadcastBytes(sender *skf.NSConn, eventName, roomName string, serializedBody []uint8) {
 	b := &broadcastRequest{
-		msg: broadcastMsg(nil, senderName, eventName, roomName, serializedBody, nil),
+		msg:    broadcastMsg(eventName, roomName, serializedBody, nil),
+		sender: sender,
 	}
 	checkBroadcastError(mr.broadcastMsg.Probe(b), "BroadcastBytes")
 }
 
 // BroadcastByte 發送 uint8 給所有人, senderName 排除廣播發送者, eventName事件名稱, roomName廣播至哪裡, body廣播資料
-func (mr *RoomManager) BroadcastByte(senderName *string, eventName, roomName string, body uint8) {
+func (mr *RoomManager) BroadcastByte(sender *skf.NSConn, eventName, roomName string, body uint8) {
 	b := &broadcastRequest{
-		msg: broadcastMsg(nil, senderName, eventName, roomName, []byte{body}, nil),
+		msg:    broadcastMsg(eventName, roomName, []byte{body}, nil),
+		sender: sender,
 	}
 	checkBroadcastError(mr.broadcastMsg.Probe(b), "BroadcastByte")
 }
 
 // BroadcastString 發送字串內容給所有人
-func (mr *RoomManager) BroadcastString(senderName *string, eventName, roomName string, body string) {
+func (mr *RoomManager) BroadcastString(sender *skf.NSConn, eventName, roomName string, body string) {
 	b := &broadcastRequest{
-		msg: broadcastMsg(nil, senderName, eventName, roomName, []byte(body), nil),
+		msg:    broadcastMsg(eventName, roomName, []byte(body), nil),
+		sender: sender,
 	}
 	checkBroadcastError(mr.broadcastMsg.Probe(b), "BroadcastString")
 }
 
 // BroadcastProtobuf 發送protobuf 給所有人
-func (mr *RoomManager) BroadcastProtobuf(senderName *string, eventName, roomName string, body proto.Message) {
+func (mr *RoomManager) BroadcastProtobuf(sender *skf.NSConn, eventName, roomName string, body proto.Message) {
 
 	marshal, err := pb.Marshal(body)
 	if err != nil {
@@ -1349,7 +1447,7 @@ func (mr *RoomManager) BroadcastProtobuf(senderName *string, eventName, roomName
 		return
 	}
 
-	mr.BroadcastBytes(senderName, eventName, roomName, marshal)
+	mr.BroadcastBytes(sender, eventName, roomName, marshal)
 }
 
 // DevelopBroadcastTest user用於測試 BroadcastChat

@@ -121,14 +121,16 @@ var (
 	}
 	// server -> client
 	clientRoomSpace = &roomNamespace{
-		UserPrivateTableInfo:      "upti",
-		UserJoin:                  "uj",
-		UserLeave:                 "ul",
-		NamespaceCommon:           "cb.common",
-		TableOnLeave:              "tol",     //Done
-		TablePrivateOnLeave:       "tpol",    //Done
-		TableOnSeat:               "tos",     //Done
-		TablePrivateOnSeat:        "tpos",    //Done
+		UserPrivateTableInfo: "upti",
+		UserJoin:             "uj",
+		UserLeave:            "ul",
+		UserPrivateLeave:     "upl", //Done
+		NamespaceCommon:      "cb.common",
+		TableOnLeave:         "tol",  //Done
+		TablePrivateOnLeave:  "tpol", //Done
+		TableOnSeat:          "tos",  //Done
+		TablePrivateOnSeat:   "tpos", //Done
+
 		Private:                   "private", // Done
 		GamePrivateDeal:           "gpd",     //Done
 		GameDeal:                  "gd",      //Done

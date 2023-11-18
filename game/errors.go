@@ -14,6 +14,9 @@ var (
 	ErrPlayMultipleGame = errors.New("不能同時多局遊戲")
 	ErrGameSeatFull     = errors.New("遊戲桌已滿,你晚了一步")
 	ErrGameStart        = errors.New("遊戲已經開始")
+
+	ErrClientBrokenOrRefresh = errors.New("client connection had broken, or browser refresh")
+	ErrConn                  = errors.New("(Server or 網路)連線問題無法送出")
 )
 
 var (

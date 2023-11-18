@@ -42,9 +42,32 @@ func (rooms AllRoom) room(roomName string) (roomGame *game.Game, err error) {
 	return nil, BackendError(GeneralCode, "無此房間", nil)
 }
 
+/*
 func (rooms AllRoom) enterProcess(ns *skf.NSConn, m skf.Message) (g *game.Game, u *game.RoomUser, err error) {
 	PB := pb.PlayingUser{}
 	err = pb.Unmarshal(m.Body, &PB)
+	if err != nil {
+		//TODO
+		panic(err)
+	}
+
+	u = &game.RoomUser{
+		NsConn:      ns,
+		PlayingUser: PB,
+		Zone8:       uint8(PB.Zone),
+	}
+
+	g, err = rooms.room(m.Room)
+	if err != nil {
+		// TBC return是不是就是會斷線
+		return nil, nil, err
+	}
+	return
+}*/
+
+func (rooms AllRoom) enterProcess(ns *skf.NSConn, m skf.Message) (g *game.Game, u *game.RoomUser, err error) {
+	PB := &pb.PlayingUser{}
+	err = pb.Unmarshal(m.Body, PB)
 	if err != nil {
 		//TODO
 		panic(err)
@@ -82,7 +105,7 @@ func (rooms AllRoom) UserJoin(ns *skf.NSConn, m skf.Message) (er error) {
 
 // UserLeave 必要參數使用者姓名, 區域
 func (rooms AllRoom) UserLeave(ns *skf.NSConn, m skf.Message) (er error) {
-	roomLog(ns, m)
+	//roomLog(ns, m)
 	g, u, er := rooms.enterProcess(ns, m)
 	if er != nil {
 		var err *BackendErr
@@ -91,14 +114,13 @@ func (rooms AllRoom) UserLeave(ns *skf.NSConn, m skf.Message) (er error) {
 		}
 		return
 	}
-	slog.Info("UserLeave", slog.String("user", u.PlayingUser.Name), slog.String("zone", fmt.Sprintf("%s", game.CbSeat(u.Zone8))))
 	g.UserLeave(u)
 	return nil
 }
 
 // PlayerJoin 必要參數使用者姓名, 區域
 func (rooms AllRoom) PlayerJoin(ns *skf.NSConn, m skf.Message) (er error) {
-	roomLog(ns, m)
+	//roomLog(ns, m)
 	g, u, er := rooms.enterProcess(ns, m)
 	if er != nil {
 		var err *BackendErr
@@ -114,7 +136,7 @@ func (rooms AllRoom) PlayerJoin(ns *skf.NSConn, m skf.Message) (er error) {
 
 // PlayerLeave 必要參數使用者姓名, 區域
 func (rooms AllRoom) PlayerLeave(ns *skf.NSConn, m skf.Message) (er error) {
-	roomLog(ns, m)
+	//roomLog(ns, m)
 	g, u, er := rooms.enterProcess(ns, m)
 	if er != nil {
 		var err *BackendErr
@@ -131,8 +153,12 @@ func (rooms AllRoom) PlayerLeave(ns *skf.NSConn, m skf.Message) (er error) {
 // competitiveBidding todo 玩家叫牌(包含叫到第幾線,什麼叫品,誰叫的)
 func (rooms AllRoom) competitiveBidding(ns *skf.NSConn, m skf.Message) error {
 	var (
-		srv    = rooms[m.Room]
-		seat8  = uint8(ns.Conn.Get(game.KeySeat).(game.CbSeat))
+		srv = rooms[m.Room]
+		//原來的code
+		//seat8  = uint8(ns.Conn.Get(game.KeySeat).(game.CbSeat))
+
+		//改過的code
+		seat8  = uint8(ns.Conn.Get(game.KeyZone).(game.CbSeat))
 		value8 uint8
 		raw8   uint8
 	)
@@ -216,11 +242,11 @@ func (rooms AllRoom) callBackStoreConnectionRole(ns *skf.NSConn, m skf.Message) 
 }
 
 func (rooms AllRoom) _OnNamespaceConnected(ns *skf.NSConn, m skf.Message) error {
-	//generalLog(ns, m)
+	generalLog(ns, m)
 	return nil
 }
 func (rooms AllRoom) _OnNamespaceDisconnect(c *skf.NSConn, m skf.Message) error {
-	//generalLog(c, m)
+	generalLog(c, m)
 
 	ctx := context.Background()
 	var err error
@@ -239,7 +265,7 @@ func (rooms AllRoom) _OnRoomJoin(c *skf.NSConn, m skf.Message) error {
 
 // Message中必須要有玩家姓名
 func (rooms AllRoom) _OnRoomJoined(ns *skf.NSConn, m skf.Message) error {
-	//generalLog(ns, m)
+	generalLog(ns, m)
 	//g, u, er := rooms.enterProcess(ns, m)
 	g, u, er := rooms.enterProcess(ns, m)
 	if er != nil {
@@ -255,9 +281,7 @@ func (rooms AllRoom) _OnRoomJoined(ns *skf.NSConn, m skf.Message) error {
 	//g.DevelopPrivatePayloadTest(u)
 
 	//送出桌面座位順序,觀眾資訊
-	slog.Info("_OnRoomJoined", slog.String("玩家姓名", u.Name))
-
-	g.RoomInfo(u)
+	g.UserJoinTableInfo(u)
 
 	return nil
 }
@@ -265,8 +289,8 @@ func (rooms AllRoom) _OnRoomJoined(ns *skf.NSConn, m skf.Message) error {
 // 前端必須曾經執行過  socket.emit(skf.OnRoomJoin); _OnRoomLeft才會生效
 // _OnRoomLeave先執行後才執行_OnRoomLeft
 func (rooms AllRoom) _OnRoomLeft(c *skf.NSConn, m skf.Message) error {
-	//roomLog(c, m)
-	_, u, er := rooms.enterProcess(c, m)
+	roomLog(c, m)
+	g, _, er := rooms.enterProcess(c, m)
 	if er != nil {
 		var err *BackendErr
 		if errors.As(er, &err) {
@@ -274,7 +298,16 @@ func (rooms AllRoom) _OnRoomLeft(c *skf.NSConn, m skf.Message) error {
 		}
 		return er
 	}
-	slog.Info("_OnRoomLeft", slog.String("玩家姓名", u.Name))
+
+	// 表示Client在房間裡突然斷線,仍殘留在房間紀錄,所以這裡是做最後檢查
+	if c.Conn.Get(game.KeyRoom) != nil || c.Conn.Get(game.KeyGame) != nil {
+		//不正常斷線時 Message是沒有任何資料的
+		slog.Debug("_OnRoomLeft不❌正常離開", slog.String("連線", c.String()))
+		go g.KickOutBrokenConnection(c, c.Conn.Get(game.KeyZone).(uint8), c.Conn.Get(game.KeyGame) != nil)
+	}
+
+	//前端必須接到後才能變scene
+
 	return nil
 }
 

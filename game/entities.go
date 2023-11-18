@@ -33,8 +33,12 @@ const (
 	// PlayersLimit 一場遊戲人數限制
 	PlayersLimit int = 4
 
-	// KeySeat 用於 Connection Store
-	KeySeat string = "SEAT"
+	// KeyRoom 用於記錄(檢驗)使用者是否不正常斷線,設定KeyZone表示一定是設定了KeyRoom 表示玩家是否已經進入房間 (UserJoin設定),(UserLeave取消)
+	KeyRoom string = "USER_IN_ROOM"
+	// KeyZone 表連線登入房間哪個Zone,設定了KeyRoom也一併會設定KeyZone (UserJoin), 當不正常斷線時,可以從Store取出,進行RoomManager- UserLeave與PlayerLeave (UserJoin設定)(UserLeave取消)
+	KeyZone string = "ZONE"
+	// KeyGame 用於記錄(檢驗)使用者是否不正常斷線, KeyGame若存在應該會與KeyZone同值 表示玩家是否在遊戲中 (PlayerJoin設定),(PlayerLeave取消)
+	KeyGame string = "GAME_SEAT"
 	// KeyPlayRole 儲存/移除遊戲中各家的角色用於 Connection Store
 	KeyPlayRole string = "ROLE"
 )
@@ -77,10 +81,11 @@ const (
 	west  uint8 = 0x2 << 6 //0x80
 	north uint8 = 0x3 << 6 //0xC0
 
-	CbEast  = CbSeat(east)  //東
-	CbSouth = CbSeat(south) //南
-	CbWest  = CbSeat(west)  //西
-	CbNorth = CbSeat(north) //北
+	CbEast      = CbSeat(east)        //東
+	CbSouth     = CbSeat(south)       //南
+	CbWest      = CbSeat(west)        //西
+	CbNorth     = CbSeat(north)       //北
+	CbSeatEmpty = CbSeat(valueNotSet) //空位
 )
 
 // 儲存叫牌過程中最後由哪一方叫到王
@@ -291,8 +296,9 @@ type (
 		//Name   string
 		//Zone   uint8 /*east south west north*/
 
-		pb.PlayingUser
-		Zone8 uint8 // 從 PlayingUser Zone轉型過來,放在Zone8是為了方便取用
+		*pb.PlayingUser       // 坑:要注意,PlayingUser不是用 Reference
+		Zone8           uint8 // 從 PlayingUser Zone轉型過來,放在Zone8是為了方便取用
+		IsClientBroken  bool  //是否不正常離線(在KickOutBrokenConnection 設定)
 	}
 
 	Audiences []*RoomUser //代表非玩家的旁賽者

@@ -12,13 +12,15 @@ func _() {
 	_ = x[CbSouth-64]
 	_ = x[CbWest-128]
 	_ = x[CbNorth-192]
+	_ = x[CbSeatEmpty-136]
 }
 
 const (
 	_CbSeat_name_0 = "東"
 	_CbSeat_name_1 = "南"
 	_CbSeat_name_2 = "西"
-	_CbSeat_name_3 = "北"
+	_CbSeat_name_3 = "空位"
+	_CbSeat_name_4 = "北"
 )
 
 func (i CbSeat) String() string {
@@ -29,8 +31,10 @@ func (i CbSeat) String() string {
 		return _CbSeat_name_1
 	case i == 128:
 		return _CbSeat_name_2
-	case i == 192:
+	case i == 136:
 		return _CbSeat_name_3
+	case i == 192:
+		return _CbSeat_name_4
 	default:
 		return "CbSeat(" + strconv.FormatInt(int64(i), 10) + ")"
 	}

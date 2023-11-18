@@ -89,6 +89,10 @@ func CreateCBGame(pid context.Context, counter UserCounter, tableName string, ta
 	return g
 }
 
+func (g *Game) Name() string {
+	return g.name
+}
+
 // Start 啟動房間, 同時啟動RoomManager
 func (g *Game) Start() {
 
@@ -140,6 +144,10 @@ func (g *Game) start() (bidder uint8, forbidden []uint8, done bool) {
 	return
 }
 
+func (g *Game) KickOutBrokenConnection(ns *skf.NSConn, kickZone uint8, kickInGame bool) {
+	go g.roomManager.KickOutBrokenConnection(ns, kickZone, kickInGame)
+}
+
 // UserJoin 使用者進入房間,參數user必須有*skf.NSConn, userName, userZone,底層會送出 TableInfo
 func (g *Game) UserJoin(user *RoomUser) {
 	//TODO: 需要從engine取出當前遊戲狀態,並一併傳入roomManager.UserJoin回送給User
@@ -160,8 +168,8 @@ func (g *Game) PlayerLeave(user *RoomUser) {
 	go g.roomManager.PlayerLeave(user)
 }
 
-func (g *Game) RoomInfo(user *RoomUser) {
-	go g.roomManager.RoomInfo(user)
+func (g *Game) UserJoinTableInfo(user *RoomUser) {
+	go g.roomManager.UserJoinTableInfo(user)
 }
 
 /* ======================================================================================== */

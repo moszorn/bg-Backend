@@ -48,14 +48,15 @@ var (
 
 		logFmt := fmt.Sprintf("%s/%s/%s/%s", namespace, room, event, shotId)
 
-		slog.Debug("space日誌", slog.String("", logFmt))
+		slog.Debug("space日誌", slog.String("FYI", logFmt))
 
-		if 0 < len(msg.Body) {
+		if len(msg.Body) > 0 {
 			slog.Debug("space日誌", slog.String("Body", string(msg.Body)))
 		}
 		slog.Debug("⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺ ")
 	}
 
+	//GameConst 避免package cycle reference, GameConst用於將Game常用常數對project export
 	GameConst = game.GameConstantExport()
 )
 

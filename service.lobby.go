@@ -74,12 +74,12 @@ func (app *BridgeGameLobby) chanLoop() {
 	}
 }
 
-func (app *BridgeGameLobby) eventHandlerMap() map[string]skf.MessageHandlerFunc {
+/*func (app *BridgeGameLobby) eventHandlerMap() map[string]skf.MessageHandlerFunc {
 	return map[string]skf.MessageHandlerFunc{
 		skf.OnNamespaceConnected:  app._OnNamespaceConnected,
 		skf.OnNamespaceDisconnect: app._OnNamespaceDisconnect,
 	}
-}
+}*/
 
 var once sync.Once
 
@@ -95,8 +95,7 @@ func (app *BridgeGameLobby) _OnceForServer(c *skf.NSConn) {
 }
 
 func (app *BridgeGameLobby) _OnNamespaceConnected(c *skf.NSConn, m skf.Message) error {
-	//generalLog(c, m)
-
+	generalLog(c, m)
 	//只有第一個Request時才會有效執行
 	app._OnceForServer(c)
 	err := app.wo.wait()
@@ -134,5 +133,22 @@ func (app *BridgeGameLobby) _OnNamespaceDisconnect(c *skf.NSConn, m skf.Message)
 		panic(err)
 	}
 
+	return nil
+}
+
+func (app *BridgeGameLobby) _OnRoomJoin(c *skf.NSConn, m skf.Message) error {
+	generalLog(c, m)
+	return nil
+}
+func (app *BridgeGameLobby) _OnRoomJoined(c *skf.NSConn, m skf.Message) error {
+	generalLog(c, m)
+	return nil
+}
+func (app *BridgeGameLobby) _OnRoomLeave(c *skf.NSConn, m skf.Message) error {
+	generalLog(c, m)
+	return nil
+}
+func (app *BridgeGameLobby) _OnRoomLeft(c *skf.NSConn, m skf.Message) error {
+	generalLog(c, m)
 	return nil
 }
