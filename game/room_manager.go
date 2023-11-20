@@ -785,7 +785,7 @@ func (mr *RoomManager) PlayerLeave(user *RoomUser) {
 	//mr.SendBytes(user.NsConn, ClnRoomEvents.TablePrivateOnLeave, nil)
 
 	//成功離開座位, 前端必須處理
-	// 廣播已經有人上桌,前端必須處理(Disable上座功能),並顯示誰上座
+	// 廣播已經有人離桌,前端必須處理(Disable上座功能),並顯示誰離座
 	mr.SendPayloadsToZone(ClnRoomEvents.TableOnLeave, user.NsConn, payload)
 
 }
@@ -1142,7 +1142,7 @@ func (mr *RoomManager) SendDeal( /*deckInPlay *map[uint8]*[NumOfCardsOnePlayer]u
 	// *map[uint8]*[NumOfCardsOnePlayer]uint8
 	//deckInPlay := &mr.g.deckInPlay
 
-	//玩家發牌
+	//玩家發牌 - 順序是東,南,西,北家, 重要 所以前段順序也必須要配合
 	mr.sendDealToPlayer(rep.e.NsConn, rep.s.NsConn, rep.w.NsConn, rep.n.NsConn)
 
 	for i := range rep.audiences {
