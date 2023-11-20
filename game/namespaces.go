@@ -124,6 +124,7 @@ var (
 		UserPrivateTableInfo: "upti",
 		UserJoin:             "uj",
 		UserLeave:            "ul",
+		UserPrivateJoin:      "upj", //Done
 		UserPrivateLeave:     "upl", //Done
 		NamespaceCommon:      "cb.common",
 		TableOnLeave:         "tol",  //Done

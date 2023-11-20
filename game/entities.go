@@ -324,7 +324,8 @@ func (audiences Audiences) Connections() (connections []*skf.NSConn) {
 }
 
 // DumpNames 列出觀眾姓名, debug用
-func (audiences Audiences) DumpNames() {
+func (audiences Audiences) DumpNames(dbgString string) {
+	slog.Debug(dbgString)
 	for i := range audiences {
 		if audiences[i].NsConn.Conn.IsClosed() {
 			slog.Debug("觀眾(Audience)", slog.String(audiences[i].Name, "斷線"))

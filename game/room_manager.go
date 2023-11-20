@@ -518,8 +518,12 @@ func (mr *RoomManager) UserJoin(user *RoomUser) {
 	mr.g.CounterAdd(user.NsConn, mr.g.name)
 
 	//廣播房間有人進入房間
-	mr.BroadcastBytes(nil, ClnRoomEvents.UserJoin, mr.g.name, []byte(user.Name))
+	mr.BroadcastBytes(user.NsConn, ClnRoomEvents.UserJoin, mr.g.name, []byte(user.Name))
 
+	err := mr.SendBytes(user.NsConn, ClnRoomEvents.UserPrivateJoin, []byte(user.Name))
+	if err != nil {
+		panic(err)
+	}
 	//TODO: 將當時房間狀態送出給進入者 (想法: Game必須一併傳入當時桌面情況進來,因為room_manager只管發送與廣播)
 }
 
@@ -1141,8 +1145,13 @@ func (mr *RoomManager) SendDeal( /*deckInPlay *map[uint8]*[NumOfCardsOnePlayer]u
 	//玩家發牌
 	mr.sendDealToPlayer(rep.e.NsConn, rep.s.NsConn, rep.w.NsConn, rep.n.NsConn)
 
+	for i := range rep.audiences {
+		roomUser := rep.audiences[i]
+		fmt.Printf("(%s)觀眾%d %s isSitting:%t\n", CbSeat(roomUser.Zone8), i, roomUser.Name, roomUser.IsSitting)
+	}
+
 	//觀眾發牌
-	rep.audiences.DumpNames() //列出哪些是觀眾
+	rep.audiences.DumpNames("SendDeal-目前觀眾") //列出哪些是觀眾
 	mr.sendDealToZone(rep.audiences.Connections())
 }
 
@@ -1411,7 +1420,7 @@ func (mr *RoomManager) BroadcastChat(sender *skf.NSConn, eventName, roomName str
 	checkBroadcastError(mr.broadcastMsg.Probe(b), "BroadcastChat")
 }
 
-// BroadcastBytes 發送 []uint8 封包給所有人
+// BroadcastBytes 發送 []uint8 封包給所有人, sender 排除廣播發送者, eventName Client事件, roomName房間名, serializedBody封包
 func (mr *RoomManager) BroadcastBytes(sender *skf.NSConn, eventName, roomName string, serializedBody []uint8) {
 	b := &broadcastRequest{
 		msg:    broadcastMsg(eventName, roomName, serializedBody, nil),
@@ -1420,7 +1429,7 @@ func (mr *RoomManager) BroadcastBytes(sender *skf.NSConn, eventName, roomName st
 	checkBroadcastError(mr.broadcastMsg.Probe(b), "BroadcastBytes")
 }
 
-// BroadcastByte 發送 uint8 給所有人, senderName 排除廣播發送者, eventName事件名稱, roomName廣播至哪裡, body廣播資料
+// BroadcastByte 發送 uint8 給所有人, sender 排除廣播發送者, eventName事件名稱, roomName廣播至哪裡, body廣播資料
 func (mr *RoomManager) BroadcastByte(sender *skf.NSConn, eventName, roomName string, body uint8) {
 	b := &broadcastRequest{
 		msg:    broadcastMsg(eventName, roomName, []byte{body}, nil),
@@ -1429,7 +1438,7 @@ func (mr *RoomManager) BroadcastByte(sender *skf.NSConn, eventName, roomName str
 	checkBroadcastError(mr.broadcastMsg.Probe(b), "BroadcastByte")
 }
 
-// BroadcastString 發送字串內容給所有人
+// BroadcastString 發送字串內容給所有人, sender 排除廣播發送者, eventName事件名稱, roomName廣播至哪裡, body廣播資料
 func (mr *RoomManager) BroadcastString(sender *skf.NSConn, eventName, roomName string, body string) {
 	b := &broadcastRequest{
 		msg:    broadcastMsg(eventName, roomName, []byte(body), nil),
@@ -1438,7 +1447,7 @@ func (mr *RoomManager) BroadcastString(sender *skf.NSConn, eventName, roomName s
 	checkBroadcastError(mr.broadcastMsg.Probe(b), "BroadcastString")
 }
 
-// BroadcastProtobuf 發送protobuf 給所有人
+// BroadcastProtobuf 發送protobuf 給所有人, sender 排除廣播發送者, eventName事件名稱, roomName廣播至哪裡, body廣播資料
 func (mr *RoomManager) BroadcastProtobuf(sender *skf.NSConn, eventName, roomName string, body proto.Message) {
 
 	marshal, err := pb.Marshal(body)
