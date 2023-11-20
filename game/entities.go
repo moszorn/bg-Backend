@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/moszorn/pb"
@@ -324,15 +325,13 @@ func (audiences Audiences) Connections() (connections []*skf.NSConn) {
 
 // DumpNames 列出觀眾姓名, debug用
 func (audiences Audiences) DumpNames() {
-	fmt.Printf("======Audiences dump======\n")
 	for i := range audiences {
 		if audiences[i].NsConn.Conn.IsClosed() {
-			fmt.Sprintf("\t觀眾 %s 已斷線\n", audiences[i].Name)
+			slog.Debug("觀眾(Audience)", slog.String(audiences[i].Name, "斷線"))
 			continue
 		}
-		fmt.Sprintf(" 觀眾:%s(%s)\n", audiences[i].Name, CbSeat(audiences[i].Zone8))
+		slog.Debug("觀眾(Audience)", slog.String(audiences[i].Name, fmt.Sprintf("%s", CbSeat(audiences[i].Zone8))))
 	}
-	fmt.Println("==============================")
 }
 
 /************************************************************************************/

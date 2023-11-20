@@ -559,7 +559,7 @@ func (mr *RoomManager) UserLeave(user *RoomUser) {
 	user.NsConn.Conn.Set(KeyZone, nil)
 
 	//TODO 廣播有人離開房間
-	mr.BroadcastString(user.NsConn, ClnRoomEvents.UserLeave, mr.g.name, user.Name)
+	mr.BroadcastString(user.NsConn, ClnRoomEvents.UserLeave, mr.g.name, response.playerName)
 
 	//不正常斷線, isClientBroken在KickOutBrokenConnection被設定
 	if user.IsClientBroken {
@@ -769,7 +769,7 @@ func (mr *RoomManager) PlayerLeave(user *RoomUser) {
 
 	payload := payloadData{
 		ProtoData: &pb.PlayingUser{
-			Name:       user.Name, //user.Name若為空表示玩家斷線,或browser refresh
+			Name:       response.playerName, //user.Name若為空表示玩家斷線,或browser refresh
 			Zone:       uint32(response.seat),
 			TicketTime: pb.LocalTimestamp(time.Now()),
 		},
