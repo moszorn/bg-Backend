@@ -98,7 +98,6 @@ func (rooms AllRoom) UserJoin(ns *skf.NSConn, m skf.Message) (er error) {
 		}
 		return
 	}
-	slog.Info("UserJoin", slog.String("user", u.PlayingUser.Name), slog.String("zone", fmt.Sprintf("%s", game.CbSeat(u.Zone8))))
 	g.UserJoin(u)
 	return nil
 }
@@ -129,7 +128,6 @@ func (rooms AllRoom) PlayerJoin(ns *skf.NSConn, m skf.Message) (er error) {
 		}
 		return
 	}
-	slog.Info("PlayerJoin", slog.String("user", u.PlayingUser.Name), slog.String("zone", fmt.Sprintf("%s", game.CbSeat(u.Zone8))))
 	g.PlayerJoin(u)
 	return nil
 }
@@ -145,7 +143,6 @@ func (rooms AllRoom) PlayerLeave(ns *skf.NSConn, m skf.Message) (er error) {
 		}
 		return
 	}
-	slog.Info("PlayerLeave", slog.String("user", u.PlayingUser.Name), slog.String("zone", fmt.Sprintf("%s", game.CbSeat(u.Zone8))))
 	g.PlayerLeave(u)
 	return nil
 }
@@ -303,7 +300,7 @@ func (rooms AllRoom) _OnRoomLeft(c *skf.NSConn, m skf.Message) error {
 	if c.Conn.Get(game.KeyRoom) != nil || c.Conn.Get(game.KeyGame) != nil {
 		//不正常斷線時 Message是沒有任何資料的
 		slog.Debug("_OnRoomLeft不❌正常離開", slog.String("連線", c.String()))
-		go g.KickOutBrokenConnection(c, c.Conn.Get(game.KeyZone).(uint8), c.Conn.Get(game.KeyGame) != nil)
+		go g.KickOutBrokenConnection(c)
 	}
 
 	//前端必須接到後才能變scene

@@ -289,15 +289,8 @@ type (
 	RoomUser struct {
 		NsConn *skf.NSConn
 
-		Tracking Track
-
-		//TicketTime time.Time //  入房間時間,若在Ring中表示上桌的時間
-		//Bid  uint8 //所叫的叫品
-		//Play uint8 //所出的牌
-		//Name   string
-		//Zone   uint8 /*east south west north*/
-
-		*pb.PlayingUser       // 坑:要注意,PlayingUser不是用 Reference
+		*pb.PlayingUser // 坑:要注意,PlayingUser不是用 Reference
+		Tracking        Track
 		Zone8           uint8 // 從 PlayingUser Zone轉型過來,放在Zone8是為了方便取用
 		IsClientBroken  bool  //是否不正常離線(在KickOutBrokenConnection 設定)
 	}

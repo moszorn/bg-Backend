@@ -3,7 +3,7 @@ package project
 import (
 	"context"
 	"log/slog"
-	"sync"
+	"sync/atomic"
 
 	"github.com/moszorn/pb"
 	"github.com/moszorn/pb/cb"
@@ -11,19 +11,39 @@ import (
 	"project/game"
 )
 
-type BridgeGameLobby struct {
-	wo     *waitOnce   //專用設定 BridgeGameLobby.server
-	server *skf.Server //第一個client連線進來時,從client NSConn.Conn.serverEvent keep server
+type (
+	One struct {
+		set  *int32
+		init int32
+	}
 
-	//進出大廳人數計數委派LobbyRooms負責,在chanLoop中監聽是否人數異動並廣播
-	counter *Counter
+	BridgeGameLobby struct {
+		one    *One        //專用設定 BridgeGameLobby.server
+		server *skf.Server //第一個client連線進來時,從client NSConn.Conn.serverEvent keep server
 
-	IsStart bool
+		//進出大廳人數計數委派LobbyRooms負責,在chanLoop中監聽是否人數異動並廣播
+		counter *Counter
+
+		IsStart bool
+	}
+)
+
+func newOnce(v int32) *One {
+	return &One{
+		new(int32),
+		v,
+	}
+}
+func (o *One) touch(f func()) {
+	if swapped := atomic.CompareAndSwapInt32(o.set, o.init, o.init); swapped {
+		f()
+		o.init++
+	}
 }
 
 func NewLobbySpaceService() *BridgeGameLobby {
 	var appLobby = &BridgeGameLobby{
-		wo:      newWaiterOnce(),
+		one:     newOnce(0),
 		server:  nil,
 		counter: counterService.(*Counter),
 	}
@@ -74,34 +94,16 @@ func (app *BridgeGameLobby) chanLoop() {
 	}
 }
 
-/*func (app *BridgeGameLobby) eventHandlerMap() map[string]skf.MessageHandlerFunc {
-	return map[string]skf.MessageHandlerFunc{
-		skf.OnNamespaceConnected:  app._OnNamespaceConnected,
-		skf.OnNamespaceDisconnect: app._OnNamespaceDisconnect,
-	}
-}*/
-
-var once sync.Once
-
-// 從第一個連線Conn中取得Server,以方便後續Lobby對所有Namespace的廣播
-func (app *BridgeGameLobby) _OnceForServer(c *skf.NSConn) {
-	if !app.wo.isReady() {
-		once.Do(func() {
-			app.server = c.Conn.Server()
-			slog.Info("設定大廳具有廣播功能", slog.Bool("status", true))
-		})
-		app.wo.unwait(nil)
-	}
+func (app *BridgeGameLobby) connectServer(c *skf.NSConn) {
+	// 從第一個連線Conn中取得Server,以方便後續Lobby對所有Namespace的廣播
+	app.one.touch(func() { app.server = c.Conn.Server() })
 }
 
 func (app *BridgeGameLobby) _OnNamespaceConnected(c *skf.NSConn, m skf.Message) error {
 	generalLog(c, m)
+
 	//只有第一個Request時才會有效執行
-	app._OnceForServer(c)
-	err := app.wo.wait()
-	if err != nil {
-		panic(err)
-	}
+	app.connectServer(c)
 
 	//step1.大廳人數加加,並對已經在大廳的人進行廣播(app.counter.BroadcastJoins)
 	app.counter.LobbyAdd(c)

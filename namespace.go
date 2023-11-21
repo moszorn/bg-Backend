@@ -87,8 +87,10 @@ func initNamespace(pid context.Context) {
 
 	// 房間與遊戲桌
 	rooms := make(map[string]*game.Game)
+
+	// key:桌名
 	tables := make(map[string]*cb.LobbyTable)
-	// 初始 Map key
+	// 設定桌名為鍵
 	for idx := range cbGameRooms {
 		rooms[cbGameRooms[idx]] = nil
 		tables[cbGameRooms[idx]] = nil

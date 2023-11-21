@@ -144,8 +144,8 @@ func (g *Game) start() (bidder uint8, forbidden []uint8, done bool) {
 	return
 }
 
-func (g *Game) KickOutBrokenConnection(ns *skf.NSConn, kickZone uint8, kickInGame bool) {
-	go g.roomManager.KickOutBrokenConnection(ns, kickZone, kickInGame)
+func (g *Game) KickOutBrokenConnection(ns *skf.NSConn) {
+	go g.roomManager.KickOutBrokenConnection(ns)
 }
 
 // UserJoin 使用者進入房間,參數user必須有*skf.NSConn, userName, userZone,底層會送出 TableInfo
