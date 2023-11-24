@@ -67,7 +67,8 @@ phases:
       - #編譯前端
       - cd $CODEBUILD_SRC_DIR_FrontendSource/project
       - ls -la
-      - webdev build -o web:deploy -rv
+      - webdev serve
+#      - webdev build -o web:deploy -rv
       - ls deploy
       # 下到Backend project目錄
       - cd $CODEBUILD_SRC_DIR
