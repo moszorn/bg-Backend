@@ -45,7 +45,8 @@ phases:
       - ls $CODEBUILD_SRC_DIR_FrontendSource/project
       - ls $CODEBUILD_SRC_DIR_ProtoSource
       - dnf install -y make
-      - aws s3 cp ${APP_BUCKET}/${BUILD_MAKE} .
+      - aws s3 cp ${APP_BUCKET}/${BUILD_MAKE} $CODEBUILD_SRC_DIR
+      - cd $CODEBUILD_SRC_DIR
       - make install-go
       - make install-dart
       - make install-protobuf
