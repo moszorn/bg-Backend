@@ -40,36 +40,30 @@ phases:
     runtime-versions:
       nodejs: latest
     commands:
-      - ls $CODEBUILD_SRC_DIR
-      - ls $CODEBUILD_SRC_DIR_FrontendSource/pb
-      - ls $CODEBUILD_SRC_DIR_FrontendSource/project
-      - ls $CODEBUILD_SRC_DIR_ProtoSource
       - dnf install -y make
       - aws s3 cp ${APP_BUCKET}/${BUILD_MAKE} $CODEBUILD_SRC_DIR
       - cd $CODEBUILD_SRC_DIR
-      - make install-go
-      - make install-dart
-      - make install-protobuf
-      - mkdir -p $CODEBUILD_SRC_DIR_FrontendSource/pb/lib/src
-      - make install-protoc-dart
-      - make install-webdev
+      - make install-sdks
       - git config --global --add url."https://${SecretUser}:${SecretToken}@${Repository}".insteadOf "https://${Repository}"
       - go env -w GOPRIVATE=${Repository}
       - make codebuild-dart-pb CODEBUILD_SRC_DIR_FrontendSource=$CODEBUILD_SRC_DIR_FrontendSource CODEBUILD_SRC_DIR_ProtoSource=$CODEBUILD_SRC_DIR_ProtoSource
     finally:
-      - echo "-------------------------------------------"
       - echo "----------end install phase----------------"
   pre_build:
     commands:
-      - echo "pre_build phase ..."
     finally:
+      - echo "----------end pre_build phase----------------"
   build:
     commands:
-      - #編譯前端
+      #下到前端,編譯前端
       - cd $CODEBUILD_SRC_DIR_FrontendSource/project
-      - make
-      - ls deploy
-      # 下到Backend project目錄
+      - dart pub cache repair
+      - webdev build -o web:deploy -rv
+      - aws s3 cp --recursive deploy/css ${SITE_BUCKET}/css/
+      - aws s3 cp --recursive deploy/data ${SITE_BUCKET}/data/
+      - aws s3 cp deploy/index.html ${SITE_BUCKET}/
+      - aws s3 cp deploy/main.dart.js ${SITE_BUCKET}/
+      # 下到後端,編譯後端
       - cd $CODEBUILD_SRC_DIR
       - mkdir ${APP_ARTIFACT_FOLDER}
       - GOOS=linux GOARCH=amd64 /usr/local/bin/go build -o ${APP_ARTIFACT_FOLDER}/${APP_BIN} ${APP_MAIN_FILE}
@@ -81,12 +75,13 @@ phases:
       - aws s3 cp ${APP_BUCKET}/${APP_SPEC} ${APP_ARTIFACT_FOLDER}
       - aws s3 cp ${APP_BUCKET}/${APP_SRV_FILE} ${APP_ARTIFACT_FOLDER}
     finally:
-#      - ls -la ${APP_ARTIFACT_FOLDER}
+      - echo "----------end build phase----------------"
   post_build:
     commands:
       - echo -e " post_build 結束 ------------------ "
     finally:
-#      - echo ${date +%Y-%m-%d}
+      - echo "----------end post_build phase----------------"
+      - echo $(date +%Y-%m-%d)
 
 
 artifacts:
