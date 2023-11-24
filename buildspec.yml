@@ -41,16 +41,19 @@ phases:
       nodejs: latest
     commands:
       - ls $CODEBUILD_SRC_DIR
-      - ls $CODEBUILD_SRC_DIR_FrontendSource
+      - ls $CODEBUILD_SRC_DIR_FrontendSource/pb
+      - ls $CODEBUILD_SRC_DIR_FrontendSource/project
       - ls $CODEBUILD_SRC_DIR_ProtoSource
       - dnf install -y make
       - aws s3 cp ${APP_BUCKET}/${BUILD_MAKE} .
       - make install-sdks
       - make install-protobuf
+      - mkdir -p $CODEBUILD_SRC_DIR_FrontendSource/pb/lib/src
       - make install-protoc-dart
       - make install-webdev
       - git config --global --add url."https://${SecretUser}:${SecretToken}@${Repository}".insteadOf "https://${Repository}"
       - go env -w GOPRIVATE=${Repository}
+      - make version
       - make codebuild-dart-pb CODEBUILD_SRC_DIR_FrontendSource=$CODEBUILD_SRC_DIR_FrontendSource CODEBUILD_SRC_DIR_ProtoSource=$CODEBUILD_SRC_DIR_ProtoSource
     finally:
       - echo "-------------------------------------------"
