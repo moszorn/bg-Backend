@@ -24,8 +24,8 @@ env:
     SITE_BUCKET: "s3://cb-site-27"
     Repository: "github.com/moszorn"
   parameter-store:
-    #底下已經不用改用secret manager
-    #GITHUB_TOKEN: /github.com/moszorn
+    #底下已經不用改用secret manager, 但必須unmark,否則codebuild會報錯: YAML_FILE_ERROR Message: Expected ParameterStore to be non-empty at line 26
+    GITHUB_TOKEN: /github.com/moszorn
     #GITHUB_TOKEN_USER: /github.com/user
   secrets-manager:
     SecretToken: "Github-moszorn:token"
