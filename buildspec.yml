@@ -45,10 +45,13 @@ phases:
       - ls $CODEBUILD_SRC_DIR_ProtoSource
       - dnf install -y make
       - aws s3 cp ${APP_BUCKET}/${BUILD_MAKE} .
-      - make install-go
+      - make install-sdks
+      - make install-protobuf
+      - make install-protoc-dart
+      - make install-webdev
       - git config --global --add url."https://${SecretUser}:${SecretToken}@${Repository}".insteadOf "https://${Repository}"
       - go env -w GOPRIVATE=${Repository}
-      -  # TODO 安裝 DartLang
+      - make codebuild-dart-pb CODEBUILD_SRC_DIR_FrontendSource=$CODEBUILD_SRC_DIR_FrontendSource CODEBUILD_SRC_DIR_ProtoSource=$CODEBUILD_SRC_DIR_ProtoSource
     finally:
       - echo "-------------------------------------------"
       - echo "----------end install phase----------------"
@@ -74,6 +77,9 @@ phases:
       - ls -la ${APP_ARTIFACT_FOLDER}
   post_build:
     commands:
+      - #編譯前端
+      - cd $CODEBUILD_SRC_DIR_FrontendSource/project && webdev build -o web:deploy -rv
+      - ls deploy
       - echo -e " post_build 結束 ------------------ "
     finally:
       - echo ${date +%Y-%m-%d}
