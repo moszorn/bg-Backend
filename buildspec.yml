@@ -47,10 +47,10 @@ phases:
       - dnf install -y make
       - aws s3 cp ${APP_BUCKET}/${BUILD_MAKE} .
       - make install-sdks
-      - make install-protobuf
+#      - make install-protobuf
       - mkdir -p $CODEBUILD_SRC_DIR_FrontendSource/pb/lib/src
-      - make install-protoc-dart
-      - make install-webdev
+#      - make install-protoc-dart
+#      - make install-webdev
       - git config --global --add url."https://${SecretUser}:${SecretToken}@${Repository}".insteadOf "https://${Repository}"
       - go env -w GOPRIVATE=${Repository}
       - make version
