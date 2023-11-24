@@ -67,7 +67,6 @@ phases:
     commands:
       - #編譯前端
       - cd $CODEBUILD_SRC_DIR_FrontendSource/project
-      - ls -la
       - make
       - ls deploy
       # 下到Backend project目錄
