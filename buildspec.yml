@@ -1,6 +1,6 @@
 version: 0.2
 # 後端主程式專案在CodeBuild環境上路徑變數 $CODEBUILD_SRC_DIR
-# 前端專案們在CodeBuild環境上路徑變數    $CODEBUILD_SRC_DIR_bg_Frontend
+# 前端專案們在CodeBuild環境上路徑變數    $CODEBUILD_SRC_DIR_bg-Frontend
 # Protobuff專案在CodeBuild環境上路徑變數 $CODEBUILD_SRC_DIR_protobuf
 #
 # /usr/local/bin/sbt/bin:/root/.goenv/shims:/root/.goenv/bin:/go/bin:/root/.phpenv/shims:/root/.phpenv/bin:/root/.pyenv/shims:/root/.pyenv/bin:/root/.rbenv/shims:/usr/local/rbenv/bin:/usr/local/rbenv/shims:/root/.dotnet/:/root/.dotnet/tools/:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/codebuild/user/bin
@@ -41,8 +41,8 @@ phases:
       nodejs: latest
     commands:
       - ls $CODEBUILD_SRC_DIR
-      - ls $CODEBUILD_SRC_DIR_bg_Frontend
-      - ls $CODEBUILD_SRC_DIR_protobuf
+      - ls $CODEBUILD_SRC_DIR_FrontendSource
+      - ls $CODEBUILD_SRC_DIR_ProtoSource
       - dnf install -y make
       - aws s3 cp ${APP_BUCKET}/${BUILD_MAKE} .
       - make install-go
