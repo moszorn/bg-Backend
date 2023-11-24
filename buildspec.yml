@@ -66,8 +66,8 @@ phases:
     commands:
       - #編譯前端
       - cd $CODEBUILD_SRC_DIR_FrontendSource/project
-      - ls -la
-      - webdev build -o web:deploy -rv
+      - $HOME/.pub-cache/bin/webdev --version
+      - $HOME/.pub-cache/bin/webdev build -o web:deploy -rv
       - ls deploy
       # 下到Backend project目錄
       - cd $CODEBUILD_SRC_DIR
@@ -81,7 +81,7 @@ phases:
       - aws s3 cp ${APP_BUCKET}/${APP_SPEC} ${APP_ARTIFACT_FOLDER}
       - aws s3 cp ${APP_BUCKET}/${APP_SRV_FILE} ${APP_ARTIFACT_FOLDER}
     finally:
-      - ls -la ${APP_ARTIFACT_FOLDER}
+#      - ls -la ${APP_ARTIFACT_FOLDER}
   post_build:
     commands:
       - echo -e " post_build 結束 ------------------ "
