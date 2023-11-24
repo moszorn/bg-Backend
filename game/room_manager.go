@@ -170,10 +170,11 @@ func (mr *RoomManager) Start() {
 			case EnterRoom:
 				user := tracking.Question
 				result := chanResult{}
-
+				//Zorn ============================
 				if _, exist := mr.getRoomUser(user.NsConn); exist {
 					result.err = ErrUserInRoom
 				}
+
 				if mr.ticketSN > RoomUsersLimit {
 					result.err = ErrRoomFull
 				}
@@ -452,8 +453,8 @@ func (mr *RoomManager) getRoomUser(nsConn *skf.NSConn) (found *RoomUser, isExist
 }
 
 // getZoneRoomUser 是否連線已經存在房間某個Zone
-func (mr *RoomManager) getZoneRoomUser(nsconn *skf.NSConn, zone uint8) (found *RoomUser, isExist bool) {
-	found, isExist = mr.Users[zone][nsconn]
+func (mr *RoomManager) getZoneRoomUser(nsConn *skf.NSConn, zone uint8) (found *RoomUser, isExist bool) {
+	found, isExist = mr.Users[zone][nsConn]
 	return
 }
 
@@ -762,8 +763,7 @@ func (mr *RoomManager) PlayerJoin(user *RoomUser) {
 		Player:      response.seat,
 		PayloadType: ProtobufType,
 	}
-	//zorn
-	//return
+
 	mr.SendPayloadsToPlayer(ClnRoomEvents.TablePrivateOnSeat, payload)
 
 	// 廣播已經有人上桌,前端必須處理(Disable上座功能),並顯示誰上座

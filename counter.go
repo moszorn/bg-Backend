@@ -87,7 +87,7 @@ func (br *Counter) chanLoop() {
 		case arg := <-br.roomJoins:
 			if table, ok := br.allRoomsJoins[arg.roomName]; ok {
 
-				br.roomers++   //存在房間裡的總人數
+				br.roomers++   //存在所有房間裡的人數
 				table.Joiner++ // 現在入桌該桌的人數
 
 				br.BroadcastRoomJoins <- broadcastArg{
@@ -113,10 +113,10 @@ func (br *Counter) chanLoop() {
 
 				br.BroadcastRoomJoins <- broadcastArg{
 					roomNumOfs: &cb.LobbyTable{
-						Joiner: table.Joiner,
-						Total:  br.roomers + br.joiners,
 						Name:   arg.roomName,
 						Id:     table.Id,
+						Joiner: table.Joiner,
+						Total:  br.roomers + br.joiners,
 					},
 					nsConn:   arg.nsConn,
 					roomName: arg.roomName,
@@ -125,7 +125,7 @@ func (br *Counter) chanLoop() {
 		case nsConn := <-br.lobbyLeaves:
 
 			if br.joiners >= 1 {
-				br.joiners-- // joiner 指的是在大廳未進入到房間裡的人數
+				br.joiners-- // joiner 在大廳未進入到房間裡的人數
 			}
 
 			br.BroadcastJoins <- broadcastArg{
@@ -154,6 +154,7 @@ func (br *Counter) chanLoop() {
 					Name:   roomName,
 					Id:     br.allRoomsJoins[roomName].Id,
 					Joiner: br.allRoomsJoins[roomName].Joiner,
+					Total:  br.roomers + br.joiners,
 				})
 			}
 			result := cb.LobbyNumOfs{

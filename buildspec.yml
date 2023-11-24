@@ -1,0 +1,89 @@
+version: 0.2
+# 後端主程式專案在CodeBuild環境上路徑變數 $CODEBUILD_SRC_DIR
+# 前端專案們在CodeBuild環境上路徑變數    $CODEBUILD_SRC_DIR_bg_Frontend
+# Protobuff專案在CodeBuild環境上路徑變數 $CODEBUILD_SRC_DIR_protobuf
+#
+# /usr/local/bin/sbt/bin:/root/.goenv/shims:/root/.goenv/bin:/go/bin:/root/.phpenv/shims:/root/.phpenv/bin:/root/.pyenv/shims:/root/.pyenv/bin:/root/.rbenv/shims:/usr/local/rbenv/bin:/usr/local/rbenv/shims:/root/.dotnet/:/root/.dotnet/tools/:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/codebuild/user/bin
+
+
+env:
+  shell: /bin/sh
+  variables:
+    APP_BIN: "App"
+    APP_MAIN_FILE: "cmd/v1/main.go"
+    APP_ARTIFACT_FOLDER: "artifact"
+    APP_BUCKET: "s3://northeast-tokyo"
+    BUILD_MAKE: "makefiles/Makefile"
+    APP_POST: "configs/app-post.sh"
+    APP_PRE: "configs/app-pre.sh"
+    APP_START: "config/app-start.sh"
+    APP_STOP: "config/app-stop.sh"
+    APP_VALIDATE: "config/app-validate.sh"
+    APP_SPEC: "config/appspec.yml"
+    APP_SRV_FILE: "config/App.service"
+    SITE_BUCKET: "s3://cb-site-27"
+    Repository: "github.com/moszorn"
+  parameter-store:
+    #底下已經不用改用secret manager
+    #GITHUB_TOKEN: /github.com/moszorn
+    #GITHUB_TOKEN_USER: /github.com/user
+  secrets-manager:
+    SecretToken: "Github-moszorn:token"
+    SecretUser: "Github-moszorn:user"
+  git-credential-helper: yes
+
+
+phases:
+  install:
+    run-as:
+    on-failure: ABORT
+    runtime-versions:
+      nodejs: latest
+    commands:
+      - ls $CODEBUILD_SRC_DIR
+      - ls $CODEBUILD_SRC_DIR_bg_Frontend
+      - ls $CODEBUILD_SRC_DIR_protobuf
+      - dnf install -y make
+      - aws s3 cp ${APP_BUCKET}/${BUILD_MAKE} .
+      - make install-go
+      - git config --global --add url."https://${SecretUser}:${SecretToken}@${Repository}".insteadOf "https://${Repository}"
+      - go env -w GOPRIVATE=${Repository}
+      -  # TODO 安裝 DartLang
+    finally:
+      - echo "--------------------------"
+      - /usr/local/bin/go version
+      - git config --global -l
+      - go env GOPRIVATE
+      - echo "--------------------------"
+  pre_build:
+    commands:
+      - echo "pre_build phase ..."
+    finally:
+  build:
+    commands:
+      # 下到Backend project目錄
+      - cd $CODEBUILD_SRC_DIR
+      - mkdir ${APP_ARTIFACT_FOLDER}
+      - # 注意: 這裡可能會不能 build, 似乎要進到project目錄下 TBC
+      - GOOS=linux GOARCH=amd64 /usr/local/bin/go build -o ${APP_ARTIFACT_FOLDER}/${APP_BIN} ${APP_MAIN_FILE}
+      - aws s3 cp ${APP_BUCKET}/${APP_POST} ${APP_ARTIFACT_FOLDER}
+      - aws s3 cp ${APP_BUCKET}/${APP_PRE} ${APP_ARTIFACT_FOLDER}
+      - aws s3 cp ${APP_BUCKET}/${APP_START} ${APP_ARTIFACT_FOLDER}
+      - aws s3 cp ${APP_BUCKET}/${APP_STOP} ${APP_ARTIFACT_FOLDER}
+      - aws s3 cp ${APP_BUCKET}/${APP_VALIDATE} ${APP_ARTIFACT_FOLDER}
+      - aws s3 cp ${APP_BUCKET}/${APP_SPEC} ${APP_ARTIFACT_FOLDER}
+      - aws s3 cp ${APP_BUCKET}/${APP_SRV_FILE} ${APP_ARTIFACT_FOLDER}
+    finally:
+      - ls -la ${APP_ARTIFACT_FOLDER}
+  post_build:
+    commands:
+      - echo -e " post_build 結束 ------------------ "
+    finally:
+      - echo ${date +%Y-%m-%d)
+
+
+artifacts:
+  files:
+    - '**/*'
+  base-directory: ${APP_ARTIFACT_FOLDER}
+  name: ${APP_BIN}-$(date +%Y-%m-%d)
