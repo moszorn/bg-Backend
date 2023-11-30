@@ -25,7 +25,7 @@ import (
 
 var (
 	//Inject from Makefile (listen port)
-	endPort string = ":80"
+	endPort string = ":1093"
 
 	pid    = strconv.Itoa(os.Getpid())
 	cpuNum = runtime.NumCPU()

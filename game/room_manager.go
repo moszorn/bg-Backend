@@ -679,6 +679,8 @@ func (mr *RoomManager) playerJoin(user *RoomUser, flag pb.SeatStatus) (zoneSeat 
 				seatAt.player.NsConn = user.NsConn
 				seatAt.player.TicketTime = atTime
 				seatAt.player.Name = user.Name
+				//seatAt.player.Zone8 = user.Zone8
+				//seatAt.player.Zone = user.Zone
 
 				zoneSeat = seatAt.zone // 入座
 				user.Tracking = EnterGame
@@ -692,14 +694,14 @@ func (mr *RoomManager) playerJoin(user *RoomUser, flag pb.SeatStatus) (zoneSeat 
 
 				//回傳離開座位者姓名
 				userName = seatAt.player.Name
+				zoneSeat = seatAt.zone // 離那個座
 
 				seatAt.player.NsConn = nil // 離座
 				seatAt.player.Play = uint32(valueNotSet)
 				seatAt.player.Bid = uint32(valueNotSet)
 				seatAt.player.Name = ""
-
-				zoneSeat = seatAt.zone // 離那個座
-				seatAt.player.Zone = uint32(valueNotSet)
+				//seatAt.player.Zone = uint32(valueNotSet)
+				//seatAt.player.Zone8 = valueNotSet
 
 				user.Tracking = EnterRoom
 				mr.players--
@@ -753,20 +755,46 @@ func (mr *RoomManager) PlayerJoin(user *RoomUser) {
 	// 告訴玩家你已經上桌,前端必須處理, 往右移1位是因為舊的code是這樣寫的 TBC
 	//user.NsConn.Emit(ClnRoomEvents.TablePrivateOnSeat, []byte{response.seat >> 1})
 	//上座玩家
-	payload := payloadData{
-		ProtoData: &pb.PlayingUser{
-			Name:       user.Name,
-			Zone:       uint32(response.seat),
-			TicketTime: pb.LocalTimestamp(time.Now()),
-			IsSitting:  response.isOnSeat,
-		},
+	//TODO: 連同桌中之前已經上座的玩家方位資訊一並丟回
+
+	//step1 以 seat 從Ring找出NsConn
+	request := &tableRequest{
+		topic: _GetTablePlayers,
+	}
+
+	r := mr.table.Probe(request)
+	players := append(make([]*RoomUser, 0, 4), r.e, r.s, r.w, r.n)
+	pbPlayers := pb.PlayingUsers{}
+	pbPlayers.Players = make([]*pb.PlayingUser, 0, 4)
+	pbPlayers.ToPlayer = &pb.PlayingUser{
+		Name:       user.Name,
+		Zone:       uint32(response.seat),
+		TicketTime: pb.LocalTimestamp(time.Now()),
+		IsSitting:  response.isOnSeat,
+	}
+
+	for i := range players {
+		pbPlayers.Players = append(pbPlayers.Players,
+			&pb.PlayingUser{
+				Name:       players[i].Name,
+				Zone:       uint32(players[i].Zone8),
+				TicketTime: pb.LocalTimestamp(time.Now()),
+				IsSitting:  players[i].IsSitting,
+			},
+		)
+	}
+	payloads := payloadData{
+		ProtoData:   &pbPlayers,
 		Player:      response.seat,
 		PayloadType: ProtobufType,
 	}
+	mr.SendPayloadToPlayer(ClnRoomEvents.TablePrivateOnSeat, payloads, response.seat)
 
-	mr.SendPayloadsToPlayer(ClnRoomEvents.TablePrivateOnSeat, payload)
-
-	// 廣播已經有人上桌,前端必須處理(Disable上座功能),並顯示誰上座
+	payload := payloadData{
+		ProtoData:   pbPlayers.ToPlayer,
+		Player:      response.seat,
+		PayloadType: ProtobufType,
+	}
 	mr.SendPayloadsToZone(ClnRoomEvents.TableOnSeat, user.NsConn, payload)
 
 	// 順利坐到位置剛好滿四人局開始
@@ -846,7 +874,6 @@ func (mr *RoomManager) PlayerLeave(user *RoomUser) {
 
 	//避免 KickOutBrokenConnection 中,執行UserLeave時再執行一次PlayerLeave
 	user.IsSitting = false
-
 	payload := payloadData{
 		ProtoData: &pb.PlayingUser{
 			Name:       response.playerName, //user.Name若為空表示玩家斷線,或browser refresh
@@ -1249,11 +1276,11 @@ func (mr *RoomManager) SendDeal( /*deckInPlay *map[uint8]*[NumOfCardsOnePlayer]u
 	//玩家發牌 - 順序是東,南,西,北家, 重要 所以前段順序也必須要配合
 	mr.sendDealToPlayer(rep.e.NsConn, rep.s.NsConn, rep.w.NsConn, rep.n.NsConn)
 
-	for i := range rep.audiences {
-		roomUser := rep.audiences[i]
-		fmt.Printf("(%s)觀眾%d %s isSitting:%t\n", CbSeat(roomUser.Zone8), i, roomUser.Name, roomUser.IsSitting)
-	}
-
+	/*	for i := range rep.audiences {
+			roomUser := rep.audiences[i]
+			fmt.Printf("(%s)觀眾%d %s isSitting:%t\n", CbSeat(roomUser.Zone8), i, roomUser.Name, roomUser.IsSitting)
+		}
+	*/
 	//觀眾發牌
 	rep.audiences.DumpNames("SendDeal-目前觀眾") //列出哪些是觀眾
 	mr.sendDealToZone(rep.audiences.Connections())
@@ -1315,7 +1342,7 @@ func (mr *RoomManager) SendPayloadToPlayers(eventName string, payload payloadDat
 	}
 }
 
-// SendPayloadsToPlayer 針對遊戲桌上某位Player(玩家)發送多筆訊息,或一筆訊息
+/*
 func (mr *RoomManager) SendPayloadsToPlayer(eventName string, payloads ...payloadData) {
 	slog.Debug("SendPayloadsToPlayer",
 		slog.String("發送", fmt.Sprintf("%s(%d)", CbSeat(payloads[0].Player), payloads[0].Player)))
@@ -1338,6 +1365,23 @@ func (mr *RoomManager) SendPayloadsToPlayer(eventName string, payloads ...payloa
 			slog.Error("payload發送失敗(SendPayloadsToPlayer)", utilog.Err(err))
 			continue
 		}
+	}
+}
+*/
+
+// SendPayloadToPlayer 發送訊息給seat, 指定eventName,訊息是 payload
+func (mr *RoomManager) SendPayloadToPlayer(eventName string, payload payloadData, seat uint8) {
+	slog.Debug("SendPayloadsToPlayer", slog.String("發送", fmt.Sprintf("%s(%d)", CbSeat(seat), seat)))
+	//底下dbg用可以移除
+	conn, name, found, _ := mr.FindPlayer(seat)
+	slog.Debug("SendPayloadsToPlayer", slog.String("姓名", name), slog.Bool("found", found))
+	if !found {
+		slog.Error("SendPayloadsToPlayer", utilog.Err(fmt.Errorf("未找到%s可進行發送", name)))
+		return
+	}
+	err := mr.send(conn, eventName, payload)
+	if err != nil {
+		slog.Error("payload發送失敗(SendPayloadsToPlayer)", utilog.Err(err))
 	}
 }
 
