@@ -6,6 +6,7 @@ import (
 
 	"github.com/moszorn/pb/cb"
 	"github.com/moszorn/utils/skf"
+
 	"project/game"
 )
 
@@ -53,9 +54,7 @@ type (
 		PlayerJoin(ns *skf.NSConn, m skf.Message) error
 		PlayerLeave(ns *skf.NSConn, m skf.Message) error
 
-		competitiveBidding(ns *skf.NSConn, m skf.Message) error
-		competitivePlaying(ns *skf.NSConn, m skf.Message) error
-		callBackStoreConnectionRole(ns *skf.NSConn, m skf.Message) error
+		GamePrivateNotyBid(ns *skf.NSConn, m skf.Message) error
 
 		_OnNamespaceConnected(c *skf.NSConn, m skf.Message) error
 		_OnNamespaceDisconnect(c *skf.NSConn, m skf.Message) error
@@ -126,6 +125,8 @@ func newSpaceManager(rooms RoomService, lobby LobbyService) SpaceManager {
 		game.SrvRoomEvents.UserPrivateLeave:    rooms.UserLeave,
 		game.SrvRoomEvents.TablePrivateOnSeat:  rooms.PlayerJoin,
 		game.SrvRoomEvents.TablePrivateOnLeave: rooms.PlayerLeave,
+
+		game.SrvRoomEvents.GamePrivateNotyBid: rooms.GamePrivateNotyBid,
 
 		//game.SrvRoomEvents.GameBid:       rooms.competitiveBidding,
 		//game.SrvRoomEvents.GamePlay:      rooms.competitivePlaying,

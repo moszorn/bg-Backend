@@ -292,6 +292,8 @@ type (
 		*pb.PlayingUser // 坑:要注意,PlayingUser不是用 Reference
 		Tracking        Track
 		Zone8           uint8 // 從 PlayingUser Zone轉型過來,放在Zone8是為了方便取用
+		Bid8            uint8 //叫品
+		Play8           uint8 //出牌
 		IsClientBroken  bool  //是否不正常離線(在KickOutBrokenConnection 設定)
 	}
 
@@ -303,6 +305,18 @@ func (ru *RoomUser) Ticket() {
 }
 func (ru *RoomUser) TicketString() string {
 	return ru.TicketTime.AsTime().Format("01/02 15:04:05")
+}
+
+// ToPbUser RoomUser轉換成 pb.PlayingUser (Bid,Play尚未轉換)
+func (ru *RoomUser) ToPbUser() *pb.PlayingUser {
+	return &pb.PlayingUser{
+		Name:       ru.Name,
+		Zone:       uint32(ru.Zone8),
+		TicketTime: pb.LocalTimestamp(time.Now()),
+		Bid:        0,
+		Play:       0,
+		IsSitting:  ru.IsSitting,
+	}
 }
 
 // Connections 所有觀眾連線
@@ -338,8 +352,6 @@ const (
 
 	//首引訊號
 	openLeading uint8 = 0x0
-	//新局開叫
-	openBidding uint8 = 0x0
 
 	//valueNotSet 表示值未定,因為x00被用於其他意義上
 	valueNotSet uint8 = 0x88
@@ -709,6 +721,10 @@ var (
 	//      0x5 - DOUBLE
 	//      0x6 - REDOUBLE
 	//      0x7 - PASS
+
+	// zeroBid 初始叫品表示開叫時叫品的值
+	//新局開叫
+	zeroBid uint8 = 0x0
 
 	//1線到7線叫品, 不含seat
 	pure7lineBid = [56]uint8{

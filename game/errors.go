@@ -15,6 +15,9 @@ var (
 	ErrGameSeatFull     = errors.New("遊戲桌已滿,你晚了一步")
 	ErrGameStart        = errors.New("遊戲已經開始")
 
+	ErrUnknownBid = errors.New("不知名叫品")
+	ErrUnContract = errors.New("合約尚未確定")
+
 	ErrClientBrokenOrRefresh = errors.New("client connection had broken, or browser refresh")
 	ErrConn                  = errors.New("(Server or 網路)連線問題無法送出")
 )

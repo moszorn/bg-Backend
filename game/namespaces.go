@@ -114,10 +114,11 @@ var (
 		TablePrivateOnLeave: "tpol", //Done
 		TablePrivateOnSeat:  "tpos", //Done
 
-		NamespaceCommon: "cb.common",
-		GameBid:         "game.bid",
-		GamePlay:        "game.play",
-		GameRoleStore:   "game.role",
+		GamePrivateNotyBid: "gpnb",
+		//NamespaceCommon: "cb.common",
+		//GameBid:         "game.bid",
+		//GamePlay:        "game.play",
+		//GameRoleStore:   "game.role",
 	}
 	// server -> client
 	clientRoomSpace = &roomNamespace{

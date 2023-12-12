@@ -10,6 +10,8 @@ import (
 	"github.com/moszorn/pb/cb"
 	utilog "github.com/moszorn/utils/log"
 	"github.com/moszorn/utils/skf"
+	"google.golang.org/protobuf/proto"
+
 	"project/game"
 )
 
@@ -42,41 +44,42 @@ func (rooms AllRoom) room(roomName string) (roomGame *game.Game, err error) {
 	return nil, BackendError(GeneralCode, "無此房間", nil)
 }
 
-/*
 func (rooms AllRoom) enterProcess(ns *skf.NSConn, m skf.Message) (g *game.Game, u *game.RoomUser, err error) {
-	PB := pb.PlayingUser{}
-	err = pb.Unmarshal(m.Body, &PB)
-	if err != nil {
-		//TODO
-		panic(err)
-	}
 
-	u = &game.RoomUser{
-		NsConn:      ns,
-		PlayingUser: PB,
-		Zone8:       uint8(PB.Zone),
-	}
+	defer func() {
+		if e := recover().(error); e != nil {
+			if errors.Is(e, proto.Error) {
+				slog.Error("proto嚴重錯誤", utilog.Err(err))
+				//TODO
+				err = e
+			}
+		}
+	}()
 
-	g, err = rooms.room(m.Room)
-	if err != nil {
-		// TBC return是不是就是會斷線
-		return nil, nil, err
-	}
-	return
-}*/
-
-func (rooms AllRoom) enterProcess(ns *skf.NSConn, m skf.Message) (g *game.Game, u *game.RoomUser, err error) {
 	PB := &pb.PlayingUser{}
 	err = pb.Unmarshal(m.Body, PB)
 	if err != nil {
-		//TODO
 		panic(err)
 	}
 
+	// 提示: raw8 = seat8 | bit8
+	//panic後的defer無用,所以一開始就宣告defer
+	//這個Recover 主要在防止 uint8(uint32)轉型爆掉
+	defer func() {
+		if fatal := recover().(error); fatal != nil {
+			slog.Error("嚴重錯誤", slog.String("FYI", fmt.Sprintf("name:name:%s/zone:%d/Bid:%d/Play:%d \n%s", PB.Name, PB.Zone, PB.Bid, PB.Play, utilog.Err(fatal))))
+			//TODO
+			err = errors.New("王八蛋不要亂搞")
+		}
+	}()
+
+	//game.CbBid(u.Bid)
 	u = &game.RoomUser{
 		NsConn:      ns,
 		PlayingUser: PB,
 		Zone8:       uint8(PB.Zone), /*使用Zone8是因為可方便取用 */
+		Bid8:        uint8(PB.Bid),
+		Play8:       uint8(PB.Play),
 	}
 
 	g, err = rooms.room(m.Room)
@@ -133,7 +136,7 @@ func (rooms AllRoom) PlayerJoin(ns *skf.NSConn, m skf.Message) (er error) {
 }
 
 // PlayerLeave 必要參數使用者姓名, 區域
-func (rooms AllRoom) PlayerLeave(ns *skf.NSConn, m skf.Message) (er error) {
+func (rooms AllRoom) PlayerLeave(ns *skf.NSConn, m skf.Message) error {
 	//roomLog(ns, m)
 	g, u, er := rooms.enterProcess(ns, m)
 	if er != nil {
@@ -141,11 +144,66 @@ func (rooms AllRoom) PlayerLeave(ns *skf.NSConn, m skf.Message) (er error) {
 		if errors.As(er, &err) {
 			slog.Error("房間錯誤", slog.String("msg", err.Error()), slog.String("room", m.Room), slog.String("zone", fmt.Sprintf("%s", game.CbSeat(u.Zone8))))
 		}
-		return
+		return er
 	}
 	g.PlayerLeave(u)
 	return nil
 }
+
+// GamePrivateNotyBid 玩家叫牌
+func (rooms AllRoom) GamePrivateNotyBid(ns *skf.NSConn, m skf.Message) error {
+	g, u, er := rooms.enterProcess(ns, m)
+	if er != nil {
+		var err *BackendErr
+		if errors.As(er, &err) {
+			slog.Error("房間錯誤", slog.String("msg", err.Error()), slog.String("room", m.Room), slog.String("zone", fmt.Sprintf("%s", game.CbSeat(u.Zone8))))
+		}
+		return er
+	}
+	//g.PlayerLeave(u)
+	slog.Info("GamePrivateNotyBid",
+		slog.String("FYI",
+			fmt.Sprintf("叫者:%s(%s),遊戲中:%t 叫品:%s  (%d)", u.Name, game.CbSeat(u.Zone8), u.IsSitting, game.CbBid(u.Bid), u.Bid)))
+
+	return g.GamePrivateNotyBid(u)
+}
+
+/*
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ */
 
 // competitiveBidding todo 玩家叫牌(包含叫到第幾線,什麼叫品,誰叫的)
 func (rooms AllRoom) competitiveBidding(ns *skf.NSConn, m skf.Message) error {

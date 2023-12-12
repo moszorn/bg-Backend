@@ -763,9 +763,10 @@ func (mr *RoomManager) PlayerJoin(user *RoomUser) {
 	}
 
 	r := mr.table.Probe(request)
-	players := append(make([]*RoomUser, 0, 4), r.e, r.s, r.w, r.n)
+
 	pbPlayers := pb.PlayingUsers{}
 	pbPlayers.Players = make([]*pb.PlayingUser, 0, 4)
+	pbPlayers.Players = append([]*pb.PlayingUser{}, r.e.ToPbUser(), r.s.ToPbUser(), r.w.ToPbUser(), r.n.ToPbUser()) //RoomUser 轉 pbPlayer
 	pbPlayers.ToPlayer = &pb.PlayingUser{
 		Name:       user.Name,
 		Zone:       uint32(response.seat),
@@ -773,16 +774,6 @@ func (mr *RoomManager) PlayerJoin(user *RoomUser) {
 		IsSitting:  response.isOnSeat,
 	}
 
-	for i := range players {
-		pbPlayers.Players = append(pbPlayers.Players,
-			&pb.PlayingUser{
-				Name:       players[i].Name,
-				Zone:       uint32(players[i].Zone8),
-				TicketTime: pb.LocalTimestamp(time.Now()),
-				IsSitting:  players[i].IsSitting,
-			},
-		)
-	}
 	payloads := payloadData{
 		ProtoData:   &pbPlayers,
 		Player:      response.seat,
@@ -802,43 +793,38 @@ func (mr *RoomManager) PlayerJoin(user *RoomUser) {
 
 	if response.isOnSeat && response.isGameStart {
 
-		//第二步 g.start會洗牌,亂數取得開叫者,及禁叫品項,
-		bidder, _, _ := mr.g.start()
+		// g.start會洗牌,亂數取得開叫者,及禁叫品項, bidder首叫會是亂數取的
+		bidder, zero := mr.g.start()
 
 		slog.Info("PlayerJoin之競叫開始", slog.String("加入遊戲者", user.Name), slog.String("首叫者", fmt.Sprintf("%s", CbSeat(bidder))))
 
-		//第二步: 提示開叫
-		var bytsload []uint8
+		//遊戲找出桌中找出開叫者
+		bidderConn, bidderName, isOnSeat, _ := mr.FindPlayer(bidder)
+		if !isOnSeat {
+			slog.Error("PlayerJoin無法開叫", utilog.Err(fmt.Errorf("開叫者座位%s可能斷線,或連線掛了", CbSeat(bidder))))
+			panic("嚴重錯誤,玩家斷線不在位置上,無法開叫")
+			//TODO 廣播玩家斷線
+		}
 
-		//bidder 表示開叫牌者 前端(Player,觀眾席)必須處理
-		bytsload = append(bytsload, bidder)
-
-		//forbidden 最後一個是禁叫品項,因為是首叫所以禁止叫品是 valueNotSet 前端(Player,觀眾席)必須處理
-		forbidden := valueNotSet
-
-		bytsload = append(bytsload, forbidden)
-
-		//第三步: 發牌
+		// 發牌
 		mr.SendDeal()
 
 		//延遲,是因為最後進來的玩家前端render速度太慢,會導致接收到NotyBid時來不及,所以延遲幾秒
-		/*		time.Sleep(time.Millisecond * 700)
+		//time.Sleep(time.Millisecond * 700)
+		slog.Error("PlayerJoin玩家連線", slog.Bool("連線不存在", bidderConn == nil), slog.String("conn", bidderConn.String()))
 
-				//找出開叫者
-				bidderNsConn, bidderName, found, _ := mr.FindPlayer(bidder)
-				if !found {
-					slog.Error("PlayerJoin無法開叫", utilog.Err(fmt.Errorf("開叫者座位%s可能斷線,或連線掛了", CbSeat(bidder))))
-					panic("嚴重錯誤,玩家斷線不在位置上,無法開叫")
+		// 注意 需要分別發送給豬面上的玩家通知 GamePrivateNotyBid
+		//個人開叫提示, 前端 必須處理
+		//TODO : 確認禁叫品就是當前最新的叫品,前端(label.dart-setBidTable)可以方便處理
+		//bidder 表示下一個開叫牌者 前端(Player,觀眾席)必須處理
+		//zero 禁叫品項,因為是首叫所以禁止叫品是 重要 zeroBid 前端(Player,觀眾席)必須處理
+		//第三個參數:上一個叫牌者
+		//第四個參數: 上一次叫品
+		mr.sendBytesToPlayers(append([]uint8{}, bidder, zero, valueNotSet, valueNotSet), ClnRoomEvents.GamePrivateNotyBid)
+		slog.Debug("", slog.String("開叫者", bidderName), slog.String("開叫者資訊", fmt.Sprintf("座位:%s,開叫值:%d", CbSeat(bidder), zero)))
 
-					//TODO 廣播玩家斷線
-				}
-
-				//個人開叫提示, 前端 必須處理
-				bidderNsConn.EmitBinary(ClnRoomEvents.GamePrivateNotyBid, bytsload)
-
-				//廣播提示開叫開始, 前端 必須處理
-				mr.BroadcastByte(&bidderName, ClnRoomEvents.GameNotyBid, mr.g.name, bidder)
-		*/
+		// 注意 廣播觀眾提示開叫開始, 前端 必須處理
+		//mr.BroadcastBytes(bidderConn, ClnRoomEvents.GameNotyBid, mr.g.name, bytesPayload)
 	}
 
 }
@@ -935,7 +921,8 @@ func (mr *RoomManager) findPlayer(seat uint8) (player *tablePlayer, exist bool) 
 	return nil, found
 }
 
-func (mr *RoomManager) FindPlayer(seat uint8) (nsConn *skf.NSConn, playerName string, found bool, isGameStart bool) {
+// FindPlayer 指定座位上的玩家(並非針對觀眾)
+func (mr *RoomManager) FindPlayer(seat uint8) (nsConn *skf.NSConn, playerName string, isOnSeat bool, isGameStart bool) {
 	tps := &tableRequest{
 		topic:  _FindPlayer,
 		player: &RoomUser{Zone8: seat},
@@ -948,10 +935,10 @@ func (mr *RoomManager) FindPlayer(seat uint8) (nsConn *skf.NSConn, playerName st
 
 	playerName = rep.playerName
 	nsConn = rep.player
-	found = rep.isOnSeat
+	isOnSeat = rep.isOnSeat
 	isGameStart = rep.isGameStart
 
-	if !found {
+	if !isOnSeat {
 		slog.Error("FindPlayer)",
 			utilog.Err(
 				fmt.Errorf("找尋%s座位上的玩家%s不在座位上", CbSeat(seat), playerName)),
@@ -1318,6 +1305,23 @@ func (mr *RoomManager) SendBytes(nsConn *skf.NSConn, eventName string, bytes []u
 		return ErrConn
 	}
 	return nil
+}
+
+func (mr *RoomManager) sendBytesToPlayers(payload []byte, eventName string) {
+
+	var connections [4]*skf.NSConn
+	connections[0], connections[1], connections[2], connections[3] = mr.AcquirePlayerConnections()
+
+	var player *skf.NSConn
+	for idx := range connections {
+		player = connections[idx]
+		if player != nil && !player.Conn.IsClosed() {
+			player.EmitBinary(eventName, payload)
+		} else {
+			//TODO 其中有一個玩家斷線,就停止遊戲,並通知所有玩家, Player
+			slog.Error("連線(sendBytesToPlayers)中斷", utilog.Err(fmt.Errorf("%ssendBytesToPlayers連線中斷", CbSeat(playerSeats[idx]))))
+		}
+	}
 }
 
 // SendByteToPlayers 發送byte訊息
