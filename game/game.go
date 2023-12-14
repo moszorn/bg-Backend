@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/moszorn/pb/cb"
 	utilog "github.com/moszorn/utils/log"
 	"github.com/moszorn/utils/skf"
 
@@ -188,7 +189,7 @@ func (g *Game) _(user *RoomUser) {
 func (g *Game) GamePrivateNotyBid(currentBidder *RoomUser) error {
 
 	slog.Debug("GamePrivateNotyBid", slog.String("傳入參數",
-		fmt.Sprintf("%s(%s) bid: %s (%d)", currentBidder.Name, CbSeat(currentBidder.Zone8), CbBid(currentBidder.Bid8), currentBidder.Bid8)))
+		fmt.Sprintf("%s(%s) contract: %s (%d)", currentBidder.Name, CbSeat(currentBidder.Zone8), CbBid(currentBidder.Bid8), currentBidder.Bid8)))
 
 	if !g.engine.IsBidValue8Valid(currentBidder.Bid8) {
 		slog.Warn("GamePrivateNotyBid",
@@ -223,18 +224,19 @@ func (g *Game) GamePrivateNotyBid(currentBidder *RoomUser) error {
 	case true:
 		//合約底定
 		if !isReBid /*不需重新競叫*/ {
-
-			leadPlayer, declarer, dummy, contract, lineContract, err := g.engine.GameStartPlayInfo(currentBidder.Zone8)
+			// Bug
+			leadPlayer, declarer, dummy, contractSuit, rcd, err := g.engine.GameStartPlayInfo(currentBidder.Zone8)
 			if err != nil {
 				if errors.Is(err, ErrUnContract) {
 					slog.Error("GamePrivateNotyBid", slog.String("FYI", fmt.Sprintf("合約有問題,只能在合約確定才能呼叫GameStartPlayInfo,%s", utilog.Err(err))))
+					return err
 				}
 			}
 
-			//contract =  Suit | rawBid8帶位置的叫品
+			//contractSuit =  Suit | rawBid8帶位置的叫品
 			slog.Debug("GamePrivateNotyBid", slog.String("合約結果",
-				fmt.Sprintf("合約底定不需重新競叫, 首引:%s 莊家:%s 夢家: %s 合約: %s  [ %s ]",
-					CbSeat(leadPlayer), CbSeat(declarer), CbSeat(dummy), CbSuit(contract), CbBid(lineContract))))
+				fmt.Sprintf("合約底定不需重新競叫, 首引:%s 莊家:%s 夢家: %s 合約: %s  [ %s ], Double: %t (%s)",
+					CbSeat(leadPlayer), CbSeat(declarer), CbSeat(dummy), CbSuit(contractSuit), rcd.contract, rcd.isDouble, rcd.dbType)))
 
 			g.engine.ClearBiddingState()
 
@@ -246,11 +248,22 @@ func (g *Game) GamePrivateNotyBid(currentBidder *RoomUser) error {
 			g.setEnginePlayer(leadPlayer, nextPlayer)
 
 			//送出首引封包
-			// 封包位元依序為:首引, 莊家, 夢家, 合約, 最後PASS者
-			// BUG contract 可能有bug,因為在網路上傳輸超過255, 需要先移位到前端後再移回來
-			// TODO: 這裡用 Protobuf傳送
-			g.roomManager.sendBytesToPlayers(append([]uint8{}, leadPlayer, declarer, dummy, contract, currentBidder.Zone8),
-				ClnRoomEvents.GameNotyFirstLead)
+			// 封包位元依序為:首引, 莊家, 夢家, 合約王牌,王牌字串, 合約線位, 線位字串
+			contractPayload := cb.Contract{
+				Lead:           uint32(leadPlayer),
+				Declarer:       uint32(declarer),
+				Dummy:          uint32(dummy),
+				Suit:           uint32(contractSuit),
+				Contract:       uint32(rcd.contract),
+				SuitString:     fmt.Sprintf("%s", CbSuit(contractSuit)),
+				ContractString: fmt.Sprintf("%s", rcd.contract),
+				DoubleString:   fmt.Sprintf("%s", rcd.dbType),
+			}
+
+			g.roomManager.SendPayloadsToPlayers(ClnRoomEvents.GameNotyFirstLead, payloadData{
+				ProtoData:   &contractPayload,
+				PayloadType: ProtobufType,
+			})
 
 			//TODO 廣播觀眾未實作
 
@@ -264,8 +277,9 @@ func (g *Game) GamePrivateNotyBid(currentBidder *RoomUser) error {
 
 			//清除叫牌紀錄
 			g.engine.ClearBiddingState()
+			time.Sleep(time.Second * 1)
 
-			time.Sleep(time.Second * 3)
+			//TODO: 現出四家的牌,三秒後在重新發新牌
 
 			// StartOpenBid會更換新一局,因此玩家順序也做了更動
 			bidder, zero := g.start()

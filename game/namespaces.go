@@ -116,7 +116,7 @@ var (
 
 		GamePrivateNotyBid: "gpnb",
 		//NamespaceCommon: "cb.common",
-		//GameBid:         "game.bid",
+		//GameBid:         "game.contract",
 		//GamePlay:        "game.play",
 		//GameRoleStore:   "game.role",
 	}
@@ -143,8 +143,8 @@ var (
 		DevelopBroadcastTest:      "dbt",
 
 		GamePrivateOnSeat:        "game.start.seat",
-		GameOpenBidStart:         "game.start.bid",
-		GameBid:                  "game.bid",
+		GameOpenBidStart:         "game.start.contract",
+		GameBid:                  "game.contract",
 		GamePlay:                 "game.play",
 		GameRoleStore:            "game.role",
 		GameNotyFirstLead:        "game.noty.lead",

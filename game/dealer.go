@@ -32,7 +32,7 @@ func shuffle(deck *[NumOfCardsInDeck]*uint8) {
 	})
 }
 
-// inPlaySync 同步個加持牌
+// inPlaySync 同步各家持牌
 func inPlaySync(g *Game) {
 	for idx, s := range playerSeats {
 		//hand := [13]uint8{}

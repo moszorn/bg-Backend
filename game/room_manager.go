@@ -776,10 +776,10 @@ func (mr *RoomManager) PlayerJoin(user *RoomUser) {
 
 	payloads := payloadData{
 		ProtoData:   &pbPlayers,
-		Player:      response.seat,
+		Player:      response.seat, /*必須指定送給誰*/
 		PayloadType: ProtobufType,
 	}
-	mr.SendPayloadToPlayer(ClnRoomEvents.TablePrivateOnSeat, payloads, response.seat)
+	mr.SendPayloadToPlayer(ClnRoomEvents.TablePrivateOnSeat, payloads)
 
 	payload := payloadData{
 		ProtoData:   pbPlayers.ToPlayer,
@@ -1181,6 +1181,29 @@ func (mr *RoomManager) SeatShift(seat uint8) (next uint8) {
  BroadcastXXXX 用於廣播,無論玩家,觀眾都會同時送出同樣的訊息,通常用於公告,聊天資訊,遊戲共同訊息(叫牌)
 ======================== ====================================================================== */
 
+// SendPlayersHandDeal 因為競叫流局,在重新發新牌前,顯示另三家持牌
+func (mr *RoomManager) SendPlayersHandDeal() {
+	tqs := &tableRequest{
+		topic: _GetZoneUsers,
+	}
+
+	rep := mr.table.Probe(tqs)
+	if rep.err != nil {
+		slog.Error("發牌SendDeal錯誤", utilog.Err(rep.err))
+	}
+	//玩家發牌 - 順序是東,南,西,北家, 重要 所以前段順序也必須要配合
+	//rep.e.NsConn, rep.s.NsConn, rep.w.NsConn, rep.n.NsConn
+
+	//eastHand, southHand, westHand, northHand := (*&mr.g.deckInPlay)[playerSeats[0]][:], (*&mr.g.deckInPlay)[playerSeats[1]][:], (*&mr.g.deckInPlay)[playerSeats[2]][:], (*&mr.g.deckInPlay)[playerSeats[3]][:]
+
+	//東家: 發南,西,北
+	//南家: 發西,北,東
+	//西家: 發北,東,南
+	//南家: 發西,北,東
+	//用 cb.PlayersCards { uint32 seat, map<uint32, bytes> data}
+
+}
+
 // SendDealToPlayer 向入座遊戲中的玩家發牌,與SendDealToZone不同, SendDealToPlayer向指定玩家發牌
 func (mr *RoomManager) sendDealToPlayer( /*deckInPlay *map[uint8]*[NumOfCardsOnePlayer]uint8, */ connections ...*skf.NSConn) {
 	// playersHand 以Seat為Key,Value代表該Seat的待發牌
@@ -1324,14 +1347,14 @@ func (mr *RoomManager) sendBytesToPlayers(payload []byte, eventName string) {
 	}
 }
 
-// SendByteToPlayers 發送byte訊息
+// SendByteToPlayers 發送byte訊息,TODO: 需要被 Refactor. 不應該傳入 []*skf.NSConn
 func (mr *RoomManager) SendByteToPlayers(eventName string, payload byte, connections []*skf.NSConn) {
 	for i := range connections {
 		mr.SendBytes(connections[i], eventName, []byte{payload})
 	}
 }
 
-// SendPayloadToPlayers 對遊戲中的玩家發一則訊息
+/*
 func (mr *RoomManager) SendPayloadToPlayers(eventName string, payload payloadData, connections []*skf.NSConn) {
 	// connections 可以是一個玩家,兩個玩家,三個玩家,四個玩家
 	var player *skf.NSConn
@@ -1344,40 +1367,59 @@ func (mr *RoomManager) SendPayloadToPlayers(eventName string, payload payloadDat
 			slog.Error("連線(sendToPlayers)中斷", utilog.Err(fmt.Errorf("發送事件%s", eventName)))
 		}
 	}
-}
+}*/
 
-/*
-func (mr *RoomManager) SendPayloadsToPlayer(eventName string, payloads ...payloadData) {
-	slog.Debug("SendPayloadsToPlayer",
-		slog.String("發送", fmt.Sprintf("%s(%d)", CbSeat(payloads[0].Player), payloads[0].Player)))
+// SendPayloadToPlayers 對遊戲中的玩家發一則訊息
+func (mr *RoomManager) SendPayloadToPlayers(eventName string, payload payloadData) {
+	var (
+		err          error
+		errFmtString = "%s玩家連線中斷"
+		connections  = make(map[uint8]*skf.NSConn)
+	)
 
-	if len(payloads) == 0 {
-		panic("SendPayloadsToPlayer 屬性player必須要有值(seat)")
+	connections[east], connections[south], connections[west], connections[north] = mr.AcquirePlayerConnections()
+
+	if connections[east] == nil {
+		err = fmt.Errorf(errFmtString, "east")
+	}
+	if connections[south] == nil {
+		err = fmt.Errorf(errFmtString, "north")
+	}
+	if connections[west] == nil {
+		err = fmt.Errorf(errFmtString, "west")
+	}
+	if connections[north] == nil {
+		err = fmt.Errorf(errFmtString, "north")
 	}
 
-	conn, name, found, _ := mr.FindPlayer(payloads[0].Player)
-	slog.Debug("SendPayloadsToPlayer", slog.String("姓名", name), slog.Bool("found", found))
+	if err != nil {
+		slog.Error("連線中斷(SendPayloadToPlayers)", utilog.Err(err))
+		//TODO 對未斷線玩家,送出現在狀況,好讓前端popup
+		for _, nsConn := range connections {
+			if nsConn != nil {
+				nsConn.EmitBinary("popup-warning", []byte(err.Error()))
+			}
+		}
 
-	if !found {
-		slog.Error("SendPayloadsToPlayer", utilog.Err(fmt.Errorf("未找到%s可進行發送", name)))
-		return
-	}
-
-	for i := range payloads {
-		err := mr.send(conn, eventName, payloads[i])
-		if err != nil {
-			slog.Error("payload發送失敗(SendPayloadsToPlayer)", utilog.Err(err))
-			continue
+	} else {
+		var player *skf.NSConn
+		for idx := range connections {
+			player = connections[idx]
+			if player != nil && !player.Conn.IsClosed() {
+				mr.send(player, eventName, payload)
+			} else {
+				//TODO 其中有一個玩家斷線,就停止遊戲,並通知所有玩家, Player
+				slog.Error("連線(sendToPlayers)中斷", utilog.Err(fmt.Errorf("發送事件%s", eventName)))
+			}
 		}
 	}
 }
-*/
 
-// SendPayloadToPlayer 發送訊息給seat, 指定eventName,訊息是 payload
-func (mr *RoomManager) SendPayloadToPlayer(eventName string, payload payloadData, seat uint8) {
-	slog.Debug("SendPayloadsToPlayer", slog.String("發送", fmt.Sprintf("%s(%d)", CbSeat(seat), seat)))
+// SendPayloadToPlayer 發送訊息給payload中指定的player, 指定eventName, 訊息 payload (期內部已經指定seat(player)了)
+func (mr *RoomManager) SendPayloadToPlayer(eventName string, payload payloadData /*, seat uint8*/) {
+	slog.Debug("SendPayloadsToPlayer", slog.String("發送", fmt.Sprintf("%s(%d)", CbSeat(payload.Player), payload.Player)))
 	//底下dbg用可以移除
-	conn, name, found, _ := mr.FindPlayer(seat)
+	conn, name, found, _ := mr.FindPlayer(payload.Player)
 	slog.Debug("SendPayloadsToPlayer", slog.String("姓名", name), slog.Bool("found", found))
 	if !found {
 		slog.Error("SendPayloadsToPlayer", utilog.Err(fmt.Errorf("未找到%s可進行發送", name)))

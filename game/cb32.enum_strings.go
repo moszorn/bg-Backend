@@ -193,11 +193,12 @@ func _() {
 	_ = x[DOUBLE-5]
 	_ = x[REDOUBLE-6]
 	_ = x[PASS-7]
+	_ = x[ZeroSuit-8]
 }
 
-const _CbSuit_name = "♣️♦️♥️♠️👑👩\u200d👦👩\u200d👩\u200d👧\u200d👦👀PASS"
+const _CbSuit_name = "♣️♦️♥️♠️👑doubledouble x2👀PASS"
 
-var _CbSuit_index = [...]uint8{0, 6, 12, 18, 24, 28, 39, 64, 72}
+var _CbSuit_index = [...]uint8{0, 6, 12, 18, 24, 28, 34, 43, 51, 51}
 
 func (i CbSuit) String() string {
 	if i >= CbSuit(len(_CbSuit_index)-1) {

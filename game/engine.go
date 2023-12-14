@@ -18,40 +18,56 @@ func randomSeat() uint8 {
 type Engine struct {
 	//locker sync.RWMutex
 
-	//lastBid 表示上一次叫品,其初始叫品為 0x1 (參考7線叫品值),叫牌過程中,當前叫品絕對不會小於或等於lastBid,除了 PASS bid外
-	lastBid uint8
+	// Record 每場遊戲最後計分所需要的資訊
+	Record *record
 
 	//四家Suit叫牌時間紀錄, Key: CbSeat | CbSuit , value: 時間(用來比對玩家叫品先後順序,以找出莊家)
 	bidHistories map[uint8]time.Time
 
-	// 重要 這個屬性(CbSeat + CbBid) 為競叫屬性,代表叫到幾線,哪一方叫到王, 是唯一一處知道幾線叫品的屬性
-	/*
-		如何從 trumpInCompetitiveBidding 知道是誰叫到合約,合約又是什麼?
-			因為 trumpInCompetitiveBidding 由 CbSeat | SbSuit
-		所以 seat = trumpInCompetitiveBidding & 0xF0
-			合約  = trumpInCompetitiveBidding & 0x00
+	/* 重要 預設值ValueNotSet,這個屬性是唯一一處知道幾線叫品的屬性,但無法從這個屬性得知誰是莊,夢,因為可能兩家都同時合約
+	memo 如何從 Contract 知道是誰最後叫到合約,合約又是什麼? 注意: 但不能知道莊家是誰
+	 seat = CbSeat(Contract & seatMark8 )
+	 幾線合約  = CbBid(egn.Contract & valueMark8)
 	*/
-	//遊戲結算階段 trumpInCompetitiveBidding, GameResult是透過這個屬性才能結算
-	//  表示該局遊戲最終叫品
-	trumpInCompetitiveBidding uint8 //注意 trumpInCompetitiveBidding 是CbSeat + CbBid
+	Contract uint8 //注意 Contract 是CbSeat + CbBid
 
-	//遊戲王牌合約 (game.CLUB,game.DIAMOND,game.HEART,game.SPADE,game.TRUMP)
-	contract uint8 //注意 trumpSuit 是CbSuit
+	// 合約代表的王牌 (game.CLUB,game.DIAMOND,game.HEART,game.SPADE,game.TRUMP)
+	contractSuit uint8 //注意 trumpSuit 是CbSuit,無法從contract知道幾線叫品, contract只代表合約中的王牌
 
 	//王張區間, 在計算首引(getGameFirstLead)時計算出王張區間,代表本局合法的王牌有哪幾張
 	trumpRange CardRange
 
-	// 表示三家pass,一家有叫品(trumpInCompetitiveBidding),表示叫到王牌競叫結束
+	// 表示三家pass,一家有叫品(Contract),表示叫到王牌競叫結束
 	// 未來 當遊戲桌關閉時,記得一同關閉channel 以免leaking 重要
 	passBuffered chan struct{}
+
+	//lastBid 表示上一次叫品,其初始叫品為 0x1 (參考7線叫品值),叫牌過程中,當前叫品絕對不會小於或等於lastBid,除了 PASS bid外
+	lastBid uint8
 
 	//本局莊家,計算GameResult會用到
 	declarer uint8
 	//本局夢家,計算GameResult會用到
 	dummy uint8
+	//.................................................)
+	// 底下用於叫品成立時,面對double,redouble, 還能keep lastPlayer
+	//初始值是0
+	// 情境ㄧ: 連續收到 db, dbx2, pass, pass, pass
+	//  db, doubleKeepLastPassPlayer + 1 (加1)
+	//  dbx2, doubleKeepLastPassPlayer + 1 (再加1)
+	//  PASS, 則 doubleKeepLastPassPlayer + 1 (再加1),之後再收到PASS就不在累加
+	// 情境二: 連續收到 db, pass, pass, pass
+	//  db,   doubleKeepLastPassPlayer + 1 (加1)
+	//  PASS, doubleKeepLastPassPlayer + 1 (再加1)
+	//  PASS, doubleKeepLastPassPlayer + 1 (再加1),之後再收到PASS就不在累加
+	// 情境三: 收到db後,若收到其它非 dbx2, pass 叫品時, doubleBidCounter必須歸0
+	doubleBidCounter int
+
+	// 初始值valueNotSet [ east(0,0x0), south(64,0x40), west(128,0x80), north(192,0xC0), valueNotSet (136,0x88)]
+	// 只有在 doubleBidCounter有 +1 的動作時, 才需要(且必須要)設定 doubleKeepLastPassPlayer, 當 doubleBidCounter>=3時,doubleKeepLastPassPlayer就不可再進行設定,直到 doubleBidCounter歸零後
+	// 不論 doubleBidCounter歸零否, doubleKeepLastPassPlayer只會判斷 doubleBidCounter是否 >= 3,才不會進行設定
+	doubleKeepLastPassPlayer uint8
 
 	//.................................................)
-
 	//表示當前叫牌玩家,或出牌玩家座位
 	currentPlay uint8
 	//表示下一個叫牌,下一個出牌者座位
@@ -61,16 +77,21 @@ type Engine struct {
 func newEngine() *Engine {
 
 	egn := &Engine{
-		passBuffered:              make(chan struct{}, 4),
-		bidHistories:              make(map[uint8]time.Time),
-		trumpRange:                CardRange{},
-		lastBid:                   0x1,
-		trumpInCompetitiveBidding: valueNotSet,
-		contract:                  valueNotSet,
-		declarer:                  valueNotSet,
-		dummy:                     valueNotSet,
-		currentPlay:               valueNotSet,
-		nextPlay:                  valueNotSet,
+		Record: &record{
+			isDouble: false,
+			dbType:   ZeroSuit,
+			contract: BidYet,
+		},
+		passBuffered: make(chan struct{}, 4),
+		bidHistories: make(map[uint8]time.Time),
+		trumpRange:   CardRange{},
+		lastBid:      0x1,
+		Contract:     valueNotSet,
+		contractSuit: valueNotSet,
+		declarer:     valueNotSet,
+		dummy:        valueNotSet,
+		currentPlay:  valueNotSet,
+		nextPlay:     valueNotSet,
 	}
 
 	return egn
@@ -95,7 +116,7 @@ func (egn *Engine) SetNextSeat(seat uint8) {
 // ClearGameState Engine 狀態還原
 func (egn *Engine) ClearGameState() {}
 
-// ClearBiddingState 競叫底定,或準備重新競叫前執行清除競叫紀錄
+// ClearBiddingState 競叫底定,四家PASS 或準備重新競叫前執行清除競叫紀錄
 // memo DONE
 func (egn *Engine) ClearBiddingState() {
 	clear(egn.bidHistories)
@@ -103,7 +124,17 @@ func (egn *Engine) ClearBiddingState() {
 	egn.lastBid = 0x1
 	egn.currentPlay = valueNotSet
 	egn.nextPlay = valueNotSet
-	egn.trumpInCompetitiveBidding = valueNotSet
+	egn.Contract = valueNotSet
+
+	egn.doubleKeepLastPassPlayer = valueNotSet
+	egn.doubleBidCounter = 0
+	// TODO 清空 record
+	egn.Record.isDouble = false
+	egn.Record.dbType = ZeroSuit
+	egn.Record.contract = BidYet
+
+	slog.Debug("ClearBiddingState", slog.Bool("清空還原競叫狀態", true))
+
 	//坑: 清空trumpSuit該在叫牌前執行
 	//egn.trumpSuit = valueNotSet
 }
@@ -160,78 +191,133 @@ func (egn *Engine) IsLastBidOrReBid(rawBidValue uint8) (bidCompleted, bidReDo bo
 
 	// 底下是叫品為PASS時,考慮的邏輯
 
-	// 此次叫品為PASS
+	// 此次叫品為PASS,丟入一個struct到buffer
 	egn.passBuffered <- struct{}{}
 
-	if len(egn.passBuffered) <= 3 && egn.trumpInCompetitiveBidding == valueNotSet /* PASS叫品未滿,競叫仍未底定*/ {
+	pass := len(egn.passBuffered)
+	if pass < 3 {
 		return
-	} else if len(egn.passBuffered) == 3 && !egn.isZeroBidOrPassBid(egn.trumpInCompetitiveBidding&valueMark8) /*PASS已滿三個,且競叫底定*/ {
-		//競叫底定
-		bidCompleted = true
-		//清空 passBuffered
+	} else if pass == 3 {
+		//eng.Contract 表示仍未開叫,之前全都PASS叫
+		if egn.Contract != valueNotSet && !egn.isZeroBidOrPassBid(egn.Contract&valueMark8) {
+			//表示第三個pass被叫時,已經有叫品產生, 競叫底定
+			bidCompleted = true
+			drainBuffer()
+			return
+		} else {
+			//表示第三個pass被叫時,仍無叫品產生,必須等候第四個pass後,重新競叫
+			return
+		}
+
+	} else if pass > 3 /*四人競叫,結果競叫流標,也就是已經叫了4個PASS了*/ {
+		//留局,競叫殘念
 		drainBuffer()
-		return
-	}
-	//四人競叫,結果競叫流標
-	if len(egn.passBuffered) == 4 {
-		drainBuffer()
 		bidCompleted = true
-		bidReDo = true
+		bidReDo = true //重新競叫
+		//清空還原叫牌紀錄
+		egn.ClearBiddingState()
+
 	}
+
 	return
 }
 
 // cacheBidHistories 將以座位叫的叫品以( CbSeat | CbSuit )形式儲存保留便於後續決定王牌
 // memo DONE
-func (egn *Engine) cacheBidHistories(seat8, cbSeatCbBid uint8) error {
-	//seat8 叫者
-	//cbSeatCbBid叫品(CbSeat+CbBid)找出對應的CbSuit
-	cbSuit, ok := rawBidSuitMapper[cbSeatCbBid]
+func (egn *Engine) cacheBidHistories(cbSeatCbBid uint8) error {
+
+	var (
+		//叫者
+		bidder = cbSeatCbBid & seatMark8
+		//叫品
+		bid = cbSeatCbBid & valueMark8
+		//合約王
+		cbSuit, ok = rawBidSuitMapper[cbSeatCbBid]
+
+		// history 作為儲存競叫記錄項目(item)
+		history = bidder | cbSuit
+	)
+	slog.Debug("cacheBidHistories",
+		utilog.Err(errors.New(
+			fmt.Sprintf(
+				"傳入參數cbSeatCbBid:%d 提取Seat: %d(%s),提取Bid: %d[ %s  ] 並以[ %s OR %s  ]為History cache Key (%d)儲存",
+				cbSeatCbBid, bidder, CbSeat(bidder), bid, CbBid(bid), CbSeat(bidder), CbSuit(cbSuit), history))))
 	if !ok {
-		//TODO 這裡發生不知名叫品
+		//TODO 這裡發生不知名合約叫品
 		return ErrUnknownBid
 	}
-	// seat 結合 suit作為儲存記錄項目
-	history := seat8 | cbSuit
-	if _, ok = egn.bidHistories[cbSuit]; !ok {
-		//以座位儲存叫牌紀錄,並附上時搓,到時以時搓比對是哪一座位先叫此花色為王,他就是莊
+
+	if _, ok = egn.bidHistories[history]; !ok {
+		//以座位儲存叫牌紀錄,並附上時搓,到時以時搓比對是哪一座位先以此花色為王,他就是莊
 		egn.bidHistories[history] = time.Now()
 	}
+
+	//zorn
+	egn.dumpBidHistories()
 	return nil
 }
 
-// GameStartPlayInfo 競叫結束,以最後叫pass座位為參數取得 首引,莊家,夢家,合約, 幾線合約
-// memo DONE 取代原 getGameFirstLead
-func (egn *Engine) GameStartPlayInfo(lastPassSeat uint8) (leadSeat, declarerSeat, dummySeat, contract, lineContract uint8, err error) {
-	// seatForFinalPASS 參數:最後一個叫PASS的座位
-	var ok bool
-	egn.contract = valueNotSet
+func (egn *Engine) dumpBidHistories() {
+	fmt.Println("-----------------------------------------------------")
+	slog.Info("dumpBidHistories[bid cache]", slog.Int("len(bidHistories)", len(egn.bidHistories)))
+	if len(egn.bidHistories) == 0 {
+		return
+	}
+	for k, t := range egn.bidHistories {
+		fmt.Printf("Key:%d [ bidder:%s bid: %s ] bid time: %s\n", k, CbSeat(k&seatMark8), CbSuit(k&valueMark8), t.Format("04:05"))
+	}
+	fmt.Println("-----------------------------------------------------")
+}
 
-	if egn.trumpInCompetitiveBidding == valueNotSet {
-		return valueNotSet, valueNotSet, valueNotSet, valueNotSet, valueNotSet, ErrUnContract
+// GameStartPlayInfo 競叫結束,以最後叫pass的玩家座位(lastPassSeat)為參數取得 leasSeat首引, declarerSeat莊家, dummySeat夢家, contractSuit王牌花, contract 合約紀錄(包含是否db,叫品線位)
+// memo DONE 取代原 getGameFirstLead
+func (egn *Engine) GameStartPlayInfo(lastPassSeat uint8) (leadSeat, declarerSeat, dummySeat, contractSuit uint8, contract record, err error) {
+	var (
+		ok             bool
+		dbgOldPassSeat uint8 = lastPassSeat
+	)
+	egn.contractSuit = valueNotSet
+	if egn.Contract == valueNotSet {
+		return valueNotSet, valueNotSet, valueNotSet, valueNotSet, record{}, ErrUnContract
 	}
 
-	egn.contract, ok = rawBidSuitMapper[egn.trumpInCompetitiveBidding]
+	egn.contractSuit, ok = rawBidSuitMapper[egn.Contract]
 
 	if !ok {
-		slog.Error("GameStartPlayInfo", slog.String("FYI", fmt.Sprintf("CbSeat(%s), CbBid(%s)無法對應任何叫品", CbSeat(egn.trumpInCompetitiveBidding&seatMark8), CbBid(egn.trumpInCompetitiveBidding&valueMark8))), utilog.Err(ErrUnContract))
-		return valueNotSet, valueNotSet, valueNotSet, valueNotSet, valueNotSet, ErrUnContract
+		slog.Error("GameStartPlayInfo", slog.String("FYI", fmt.Sprintf("CbSeat(%s), CbBid(%s)無法對應任何叫品", CbSeat(egn.Contract&seatMark8), CbBid(egn.Contract&valueMark8))), utilog.Err(ErrUnContract))
+		return valueNotSet, valueNotSet, valueNotSet, valueNotSet, record{}, ErrUnContract
 	}
 
-	//lastPassSeat = lastPassSeat << 6
+	slog.Debug("GameStartPlayInfo",
+		slog.String("FYI",
+			fmt.Sprintf("最後叫PASS的是%d(%s),王牌數值:%d  %s  ",
+				lastPassSeat,
+				CbSeat(lastPassSeat),
+				egn.contractSuit,
+				CbSuit(egn.contractSuit))))
+
+	if egn.Record.isDouble {
+		//因為賭倍,重設 lastPassSeat
+		lastPassSeat = egn.doubleKeepLastPassPlayer
+	}
+
+	egn.dumpBidHistories()
+
 	switch lastPassSeat {
 	//南北合約局
 	case east, west: //最後PASS的是 east, west
-		switch s, n := egn.bidHistories[south|egn.contract], egn.bidHistories[north|egn.contract]; {
-		case !n.IsZero() && s.IsZero():
+		slog.Info("GameStartPlayInfo", slog.Int("Key", int(south|egn.contractSuit)), slog.String("南叫約時間", fmt.Sprintf("%s", egn.bidHistories[south|egn.contractSuit])))
+		slog.Info("GameStartPlayInfo", slog.Int("Key", int(north|egn.contractSuit)), slog.String("北叫約時間", fmt.Sprintf("%s", egn.bidHistories[north|egn.contractSuit])))
+		switch s, n := egn.bidHistories[south|egn.contractSuit], egn.bidHistories[north|egn.contractSuit]; {
+		case !s.IsZero() && n.IsZero(): //南
 			fallthrough
-		case !n.IsZero() && !s.IsZero() && s.Before(n):
+		case !n.IsZero() && !s.IsZero() && s.Before(n): // 北,南, 南早於北
 			egn.declarer = south
 			egn.dummy = north
 			leadSeat = west
-		case !s.IsZero() && n.IsZero():
+		case s.IsZero() && !n.IsZero(): //北
 			fallthrough
-		case !n.IsZero() && !s.IsZero() && n.Before(s):
+		case !n.IsZero() && !s.IsZero() && n.Before(s): // 北,南, 北早於南
 			egn.declarer = north
 			egn.dummy = south
 			leadSeat = east
@@ -242,16 +328,18 @@ func (egn *Engine) GameStartPlayInfo(lastPassSeat uint8) (leadSeat, declarerSeat
 
 	//東西合約局
 	case south, north:
-		switch e, w := egn.bidHistories[east|egn.contract], egn.bidHistories[west|egn.contract]; {
-		case e.IsZero() && !w.IsZero():
+		slog.Info("GameStartPlayInfo", slog.Int("Key", int(east|egn.contractSuit)), slog.String("東叫約時間", fmt.Sprintf("%s", egn.bidHistories[east|egn.contractSuit])))
+		slog.Info("GameStartPlayInfo", slog.Int("Key", int(west|egn.contractSuit)), slog.String("西叫約時間", fmt.Sprintf("%s", egn.bidHistories[west|egn.contractSuit])))
+		switch e, w := egn.bidHistories[east|egn.contractSuit], egn.bidHistories[west|egn.contractSuit]; {
+		case e.IsZero() && !w.IsZero(): //西
 			fallthrough
-		case !e.IsZero() && !w.IsZero() && w.Before(e):
+		case !e.IsZero() && !w.IsZero() && w.Before(e): // 東,西, 西早於東
 			egn.declarer = west
 			egn.dummy = east
 			leadSeat = north
-		case !e.IsZero() && w.IsZero():
+		case !e.IsZero() && w.IsZero(): //東
 			fallthrough
-		case !e.IsZero() && !w.IsZero() && e.Before(w):
+		case !e.IsZero() && !w.IsZero() && e.Before(w): // 東, 西, 東早於西
 			egn.declarer = east
 			egn.dummy = west
 			leadSeat = south
@@ -264,10 +352,31 @@ func (egn *Engine) GameStartPlayInfo(lastPassSeat uint8) (leadSeat, declarerSeat
 	}
 
 	//重要 設定王牌範圍
-	egn.trumpRange = TrumpCardRange(egn.trumpInCompetitiveBidding)
+	egn.trumpRange = TrumpCardRange(egn.Contract)
 
-	//slog.Debug("GameStartPlayInfo============>", slog.String("最終合約", fmt.Sprintf("Contract: %s [  %s  ] 首引:%s 莊家:%s", CbSuit(egn.contract), CbBid(egn.trumpInCompetitiveBidding), CbSeat(leadSeat), CbSeat(declarerSeat))))
-	return leadSeat, egn.declarer, egn.dummy, egn.contract, egn.trumpInCompetitiveBidding, nil
+	egn.Record.contract = CbBid(egn.Contract & valueMark8)
+
+	if !egn.Record.isDouble {
+		slog.Debug("GameStartPlayInfo[最終合約]",
+			slog.String("FYI",
+				fmt.Sprintf("王牌花色: %s  [  %s  ] 最後叫者:%s 首引:%s",
+					CbSuit(egn.contractSuit),
+					CbBid(egn.Contract&valueMark8),
+					CbSeat(egn.Contract&seatMark8),
+					CbSeat(leadSeat))))
+	} else {
+		slog.Debug("GameStartPlayInfo[最終合約]",
+			slog.String("FYI",
+				fmt.Sprintf("王牌花色: %s  [  %s  ] 最後叫者:%s (原:%s) 賭倍:%s 首引:%s 是否重設lastPassSeat:%t",
+					CbSuit(egn.contractSuit),
+					egn.Record.contract,
+					CbSeat(egn.doubleKeepLastPassPlayer),
+					CbSeat(dbgOldPassSeat),
+					egn.Record.dbType,
+					CbSeat(leadSeat),
+					egn.Record.isDouble)))
+	}
+	return leadSeat, egn.declarer, egn.dummy, egn.contractSuit, *egn.Record, nil
 }
 
 // isPassBid 叫品是否是PASS叫品
@@ -282,11 +391,22 @@ func (egn *Engine) isZeroBidOrPassBid(value8 uint8) bool {
 }
 
 func (egn *Engine) StartBid() (nextBidder uint8, limitBiddingValue uint8) {
-	egn.contract = valueNotSet
-	egn.trumpInCompetitiveBidding = valueNotSet
+	egn.contractSuit = valueNotSet
+	egn.Contract = valueNotSet
 	// 重要  叫品首開叫, 重要: 前端以zeroBid來判斷是不是首叫開始
 	//return randomSeat(), zeroBid
 	return east, zeroBid
+}
+
+func (egn *Engine) IsDoubleBid(bid8 uint8) (dbType CbSuit) {
+	dbType = ZeroSuit //注意: 這裡dbType應是CbSuit,但我塞入 CbBid的值 表示沒無db
+	switch bid8 {
+	case 0x7, 0xF, 0x17, 0x1F, 0x27, 0x2F, 0x37:
+		dbType = DOUBLE
+	case 0x8, 0x10, 0x18, 0x20, 0x28, 0x30, 0x38:
+		dbType = REDOUBLE
+	}
+	return
 }
 
 // GetNextBid 下一輪叫牌, 重要 bidValue 表示(CbSeat | CbBid)組合值
@@ -297,17 +417,50 @@ func (egn *Engine) GetNextBid(seat, rawBid8, bidValue uint8) (nextBidder uint8, 
 
 	//當前叫品若不是PASS,則可能會是最後叫品(王牌)產生
 	if !egn.isZeroBidOrPassBid(rawBid8) {
-		//重要
-		// TODO memo bidValue 是整場遊戲唯一能藉由算出GameResult的重要值
-		//  memo 因為bidValue能得這場遊戲是知幾線叫品
-		//  memo 因此需要keep 叫到王牌時的rawBid8 直到整場遊戲(GameResult)結果發生
-		egn.trumpInCompetitiveBidding = bidValue    //帶位置的王牌表示
-		err = egn.cacheBidHistories(seat, bidValue) //Zorn
-		egn.lastBid = zeroBid                       //暫時設定zeroBid,下面會設回最新的bid
+
+		// Double, ReDouble叫品發生
+		if db := egn.IsDoubleBid(rawBid8); db != ZeroSuit {
+			egn.Record.isDouble = true
+			egn.Record.dbType = db
+
+			// yama zorn
+			// 發生 double, doubleBidCounter必須+1, 並設定 doubleKeepLastPassPlayer
+			egn.doubleBidCounter++
+			egn.doubleKeepLastPassPlayer = seat
+
+			//重要: 當 double , redouble 時, 指的是針對之前某一個叫品賭倍,因此不需要紀錄 cacheBidHistories
+
+		} else {
+
+			// 非Double, ReDouble叫品發生
+
+			//重要
+			// TODO memo bidValue 是整場遊戲唯一能藉由算出GameResult的重要值
+			//  memo 因為bidValue能得這場遊戲是知幾線叫品
+			//  memo 因此需要keep 叫到王牌時的rawBid8 直到整場遊戲(GameResult)結果發生
+			egn.Contract = bidValue               //帶位置的王牌表示
+			err = egn.cacheBidHistories(bidValue) //Zorn
+			egn.lastBid = zeroBid                 //暫時設定zeroBid,下面會設回最新的bid
+
+			// yama zorn
+			//只要不是 Double 叫品,所有double係相關屬性都歸zero
+			egn.Record.isDouble = false
+			egn.Record.dbType = ZeroSuit
+			egn.doubleBidCounter = 0            //只要不是db叫,counter就歸零
+			egn.doubleKeepLastPassPlayer = seat // 只要 doubleBidCounter <= 3時,doubleKeepLastPassPlayer都要被設定
+		}
 
 	} else {
 		//PASS Bid
-		rawBid8 = egn.lastBid
+		rawBid8 = egn.lastBid //將上一次bid設定給這次的pass bid
+
+		//yama zorn
+		// 判斷是否 db 其間,才進行 double計數,並設定 doubleKeepLastPassPlayer
+		if egn.Record.isDouble && egn.doubleBidCounter < 3 {
+			//只有在counter < 3時 counter += 1, 並設定 lastPlayer
+			egn.doubleBidCounter++
+			egn.doubleKeepLastPassPlayer = seat
+		}
 	}
 
 	if !egn.isZeroBidOrPassBid(rawBid8) {
