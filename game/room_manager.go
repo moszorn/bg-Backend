@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/moszorn/pb/cb"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
 
@@ -820,7 +821,9 @@ func (mr *RoomManager) PlayerJoin(user *RoomUser) {
 		//zero 禁叫品項,因為是首叫所以禁止叫品是 重要 zeroBid 前端(Player,觀眾席)必須處理
 		//第三個參數:上一個叫牌者
 		//第四個參數: 上一次叫品
-		mr.sendBytesToPlayers(append([]uint8{}, bidder, zero, valueNotSet, valueNotSet), ClnRoomEvents.GamePrivateNotyBid)
+		//第五個參數: 一線double value CbBid (  Db1 )
+		//第六個參數: 一線redouble value (ValueNotSet)
+		mr.sendBytesToPlayers(append([]uint8{}, bidder, zero, valueNotSet, valueNotSet, valueNotSet, valueNotSet), ClnRoomEvents.GamePrivateNotyBid)
 		slog.Debug("", slog.String("開叫者", bidderName), slog.String("開叫者資訊", fmt.Sprintf("座位:%s,開叫值:%d", CbSeat(bidder), zero)))
 
 		// 注意 廣播觀眾提示開叫開始, 前端 必須處理
@@ -1193,14 +1196,81 @@ func (mr *RoomManager) SendPlayersHandDeal() {
 	}
 	//玩家發牌 - 順序是東,南,西,北家, 重要 所以前段順序也必須要配合
 	//rep.e.NsConn, rep.s.NsConn, rep.w.NsConn, rep.n.NsConn
+	actions := make(map[*skf.NSConn][]byte)
+	actions[rep.e.NsConn] = nil
+	actions[rep.s.NsConn] = nil
+	actions[rep.w.NsConn] = nil
+	actions[rep.n.NsConn] = nil
 
-	//eastHand, southHand, westHand, northHand := (*&mr.g.deckInPlay)[playerSeats[0]][:], (*&mr.g.deckInPlay)[playerSeats[1]][:], (*&mr.g.deckInPlay)[playerSeats[2]][:], (*&mr.g.deckInPlay)[playerSeats[3]][:]
+	eastHand, southHand, westHand, northHand := (*&mr.g.deckInPlay)[playerSeats[0]][:], (*&mr.g.deckInPlay)[playerSeats[1]][:], (*&mr.g.deckInPlay)[playerSeats[2]][:], (*&mr.g.deckInPlay)[playerSeats[3]][:]
 
 	//東家: 發南,西,北
 	//南家: 發西,北,東
 	//西家: 發北,東,南
 	//南家: 發西,北,東
 	//用 cb.PlayersCards { uint32 seat, map<uint32, bytes> data}
+
+	//發送給東家, 發南,西,北手持牌
+	eastPlayer := &cb.PlayersCards{
+		Seat: uint32(east),
+		Data: map[uint32][]byte{
+			uint32(south): southHand,
+			uint32(west):  westHand,
+			uint32(north): northHand}}
+	//發送給南家: 發西,北,東手持牌
+	southPlayer := &cb.PlayersCards{
+		Seat: uint32(south),
+		Data: map[uint32][]byte{
+			uint32(west):  westHand,
+			uint32(north): northHand,
+			uint32(east):  eastHand}}
+	//發送給西家: 發北,東,南手持牌
+	westPlayer := &cb.PlayersCards{
+		Seat: uint32(west),
+		Data: map[uint32][]byte{
+			uint32(north): northHand,
+			uint32(east):  eastHand,
+			uint32(south): southHand}}
+	//發送給北家: 發東,南,西手持牌
+	northPlayer := &cb.PlayersCards{
+		Seat: uint32(north),
+		Data: map[uint32][]byte{
+			uint32(east):  eastHand,
+			uint32(south): southHand,
+			uint32(west):  westHand}}
+
+	eastMarshal, err := pb.Marshal(eastPlayer)
+	if err != nil {
+		slog.Error("SendPlayersHandDeal(東)", utilog.Err(err))
+	}
+	actions[rep.e.NsConn] = eastMarshal
+
+	southMarshal, err := pb.Marshal(southPlayer)
+	if err != nil {
+		slog.Error("SendPlayersHandDeal(南)", utilog.Err(err))
+	}
+	actions[rep.s.NsConn] = southMarshal
+
+	westMarshal, err := pb.Marshal(westPlayer)
+	if err != nil {
+		slog.Error("SendPlayersHandDeal(西)", utilog.Err(err))
+	}
+	actions[rep.w.NsConn] = westMarshal
+
+	northMarshal, err := pb.Marshal(northPlayer)
+	if err != nil {
+		slog.Error("SendPlayerHandDeal(北)", utilog.Err(err))
+	}
+	actions[rep.n.NsConn] = northMarshal
+
+	var (
+		payload    []byte
+		connection *skf.NSConn
+		eventName  string = ClnRoomEvents.GamePlayersHandDeal
+	)
+	for connection, payload = range actions {
+		connection.EmitBinary(eventName, payload)
+	}
 
 }
 

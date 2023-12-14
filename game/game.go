@@ -277,9 +277,11 @@ func (g *Game) GamePrivateNotyBid(currentBidder *RoomUser) error {
 
 			//清除叫牌紀錄
 			g.engine.ClearBiddingState()
-			time.Sleep(time.Second * 1)
 
-			//TODO: 現出四家的牌,三秒後在重新發新牌
+			//現出另三家的底牌,三秒後在重新發新牌
+			g.roomManager.SendPlayersHandDeal()
+			fmt.Println("waiting ................................")
+			time.Sleep(time.Second * 3)
 
 			// StartOpenBid會更換新一局,因此玩家順序也做了更動
 			bidder, zero := g.start()
