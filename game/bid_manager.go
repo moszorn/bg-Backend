@@ -9,7 +9,7 @@ import (
 type (
 	DoubleButton struct {
 		value uint8 //Double CbBid值
-		isOn  uint8 // 1: On \ 0:Off
+		isOn  bool  // 1: On \ 0:Off
 	}
 
 	//代表一個競叫

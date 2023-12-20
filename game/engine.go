@@ -115,11 +115,11 @@ func (egn *Engine) GetNextBid(seat, bid uint8) (nextBiddingLimit uint8, db Doubl
 			//前端叫double x2,下一個叫者兩個double選項都要關閉,只能往下一線叫
 			switch bidding.dbType {
 			case DOUBLE:
-				db2.isOn = 1
+				db2.isOn = true
 			}
 		case false:
 			//前端叫正常叫品,下一個叫者就要要顯示double
-			db.isOn = 1
+			db.isOn = true
 		}
 	}
 	/*

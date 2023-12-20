@@ -205,20 +205,36 @@ func (g *Game) GamePrivateNotyBid(currentBidder *RoomUser) error {
 
 	complete, needReBid := g.engine.IsBidFinishedOrReBid()
 	switch complete {
+
 	case false: //仍在競叫中
 		//第一個參數: 表示下一個開叫牌者 前端(Player,觀眾席)必須處理
 		//第二個參數: 禁叫品項,因為是首叫所以禁止叫品是 重要 zeroBid 前端(Player,觀眾席)必須處理
 		//第三個參數: 上一個叫牌者
 		//第四個參數: 上一次叫品
-		g.roomManager.sendBytesToPlayers(append([]uint8{},
-			next,
-			nextLimitBidding,
-			currentBidder.Zone8,
-			currentBidder.Bid8,
-			db1.value,
-			db1.isOn,
-			db2.value,
-			db2.isOn), ClnRoomEvents.GamePrivateNotyBid)
+
+		payload := cb.NotyBid{
+			Bidder:     uint32(next),
+			BidStart:   uint32(nextLimitBidding),
+			LastBidder: fmt.Sprintf("%s-%s", CbSeat(currentBidder.Zone8), currentBidder.Name),
+			LastBid:    fmt.Sprintf("%s", CbBid(currentBidder.Bid8)),
+			Double1:    uint32(db1.value),
+			Double2:    uint32(db2.value),
+			Btn:        0,
+		}
+
+		switch true {
+		case db1.isOn:
+			payload.Btn = cb.NotyBid_db
+		case db2.isOn:
+			payload.Btn = cb.NotyBid_dbx2
+		default:
+			payload.Btn = cb.NotyBid_disable_all
+		}
+
+		g.roomManager.SendPayloadToPlayers(ClnRoomEvents.GamePrivateNotyBid, payloadData{
+			ProtoData:   &payload,
+			PayloadType: ProtobufType,
+		})
 
 	case true: //競叫完成
 		fmt.Printf("競叫完成之- needReBid: %t\n", needReBid)
@@ -241,17 +257,20 @@ func (g *Game) GamePrivateNotyBid(currentBidder *RoomUser) error {
 			//重發牌
 			g.roomManager.SendDeal()
 
-			//送出reBid
-			g.roomManager.sendBytesToPlayers(append([]uint8{},
-				bidder,
-				valueNotSet,
-				reBidSignal,
-				valueNotSet,
-				uint8(Db1),
-				uint8(0),
-				uint8(Db1x2),
-				uint8(0)),
-				ClnRoomEvents.GamePrivateNotyBid)
+			payload := cb.NotyBid{
+				Bidder:     uint32(bidder),
+				BidStart:   uint32(reBidSignal),
+				LastBidder: fmt.Sprintf("%s-%s", CbSeat(currentBidder.Zone8), currentBidder.Name),
+				LastBid:    fmt.Sprintf("%s", CbBid(currentBidder.Bid8)),
+				Double1:    uint32(db1.value),
+				Double2:    uint32(db2.value),
+				Btn:        cb.NotyBid_disable_all,
+			}
+
+			g.roomManager.SendPayloadToPlayers(ClnRoomEvents.GamePrivateNotyBid, payloadData{
+				ProtoData:   &payload,
+				PayloadType: ProtobufType,
+			})
 
 		case false: //競叫完成,遊戲開始
 
@@ -292,7 +311,7 @@ func (g *Game) GamePrivateNotyBid(currentBidder *RoomUser) error {
 				),
 			)
 
-			g.roomManager.SendPayloadsToPlayers(ClnRoomEvents.GameNotyFirstLead, payloadData{
+			g.roomManager.SendPayloadToPlayers(ClnRoomEvents.GameNotyFirstLead, payloadData{
 				ProtoData:   &contractPayload,
 				PayloadType: ProtobufType,
 			})

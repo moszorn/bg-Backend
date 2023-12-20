@@ -812,13 +812,13 @@ func (mr *RoomManager) PlayerJoin(user *RoomUser) {
 
 		//延遲,是因為最後進來的玩家前端render速度太慢,會導致接收到NotyBid時來不及,所以延遲幾秒
 		//time.Sleep(time.Millisecond * 700)
-		slog.Error("PlayerJoin玩家連線", slog.Bool("連線不存在", bidderConn == nil), slog.String("conn", bidderConn.String()))
+		slog.Debug("PlayerJoin玩家連線", slog.Bool("連線不存在?", bidderConn == nil), slog.String("conn", bidderConn.String()))
 
 		// 注意 需要分別發送給豬面上的玩家通知 GamePrivateNotyBid
 		//個人開叫提示, 前端 必須處理
 		//TODO : 確認禁叫品就是當前最新的叫品,前端(label.dart-setBidTable)可以方便處理
 		//bidder 表示下一個開叫牌者 前端(Player,觀眾席)必須處理
-		//禁叫品項,因為是首叫所以禁止叫品是 重要 zeroBid 前端(Player,觀眾席)必須處理
+		//禁叫品項,因為是首叫所以禁止叫品是 重要 zeroBid競叫開始
 		//第三個參數:上一個叫牌者(ValueNotSet)
 		//第四個參數: 上一次叫品(ValueNotSet)
 		//第五個參數: 一線double value
@@ -826,16 +826,30 @@ func (mr *RoomManager) PlayerJoin(user *RoomUser) {
 		//第七個參數: 一線ReDouble value
 		//第八個參數: 一線ReDouble 開啟 (0:表示disable)
 		//   參考: GamePrivateNotyBid
-		mr.sendBytesToPlayers(append([]uint8{},
-			bidder,
-			zero,
-			valueNotSet,
-			valueNotSet,
-			uint8(Db1),
-			uint8(0),
-			uint8(Db1x2),
-			uint8(0)), ClnRoomEvents.GamePrivateNotyBid)
-		slog.Debug("", slog.String("開叫者", bidderName), slog.String("開叫者資訊", fmt.Sprintf("座位:%s,開叫值:%d", CbSeat(bidder), zero)))
+
+		notyBid := cb.NotyBid{
+			Bidder:   uint32(bidder),
+			BidStart: uint32(zero),
+			Double1:  uint32(Db1),
+			Double2:  uint32(Db2),
+			Btn:      cb.NotyBid_disable_all,
+		}
+
+		mr.SendPayloadToPlayers(ClnRoomEvents.GamePrivateNotyBid, payloadData{
+			ProtoData:   &notyBid,
+			PayloadType: ProtobufType,
+		})
+
+		/*		mr.sendBytesToPlayers(append([]uint8{},
+				bidder,
+				zero,
+				valueNotSet,
+				valueNotSet,
+				uint8(Db1),
+				uint8(0),
+				uint8(Db1x2),
+				uint8(0)), ClnRoomEvents.GamePrivateNotyBid)
+		*/slog.Debug("PlayerJoin送出封包gpnb", slog.String("開叫者", bidderName), slog.String("開叫者資訊", fmt.Sprintf("座位:%s,開叫值:%d", CbSeat(bidder), zero)))
 
 		// 注意 廣播觀眾提示開叫開始, 前端 必須處理
 		//mr.BroadcastBytes(bidderConn, ClnRoomEvents.GameNotyBid, mr.g.name, bytesPayload)
@@ -1513,7 +1527,7 @@ func (mr *RoomManager) SendPayloadToPlayer(eventName string, payload payloadData
 	}
 }
 
-// SendPayloadsToPlayers 同時對遊戲中4玩家發送訊息(payload)
+// SendPayloadsToPlayers 同時對遊戲中4玩家發送訊息(payload), 坑) 注意: 每個payload都要指定player,否則發不出去
 func (mr *RoomManager) SendPayloadsToPlayers(eventName string, payloads ...payloadData) {
 
 	var (
