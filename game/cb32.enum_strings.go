@@ -8,19 +8,17 @@ func _() {
 	// An "invalid array index" compiler error signifies that the constant values have changed.
 	// Re-run the stringer command to generate them again.
 	var x [1]struct{}
-	_ = x[CbEast-0]
-	_ = x[CbSouth-64]
-	_ = x[CbWest-128]
-	_ = x[CbNorth-192]
-	_ = x[CbSeatEmpty-136]
+	_ = x[east-0]
+	_ = x[south-64]
+	_ = x[west-128]
+	_ = x[north-192]
 }
 
 const (
 	_CbSeat_name_0 = "東"
 	_CbSeat_name_1 = "南"
 	_CbSeat_name_2 = "西"
-	_CbSeat_name_3 = "空位"
-	_CbSeat_name_4 = "北"
+	_CbSeat_name_3 = "北"
 )
 
 func (i CbSeat) String() string {
@@ -31,10 +29,8 @@ func (i CbSeat) String() string {
 		return _CbSeat_name_1
 	case i == 128:
 		return _CbSeat_name_2
-	case i == 136:
-		return _CbSeat_name_3
 	case i == 192:
-		return _CbSeat_name_4
+		return _CbSeat_name_3
 	default:
 		return "CbSeat(" + strconv.FormatInt(int64(i), 10) + ")"
 	}
@@ -43,6 +39,7 @@ func _() {
 	// An "invalid array index" compiler error signifies that the constant values have changed.
 	// Re-run the stringer command to generate them again.
 	var x [1]struct{}
+	_ = x[BidYet-0]
 	_ = x[Pass1-1]
 	_ = x[C1-2]
 	_ = x[D1-3]
@@ -101,14 +98,13 @@ func _() {
 	_ = x[Db7x2-56]
 }
 
-const _CbBid_name = "1線✔︎1線♣️1線♦️1線♥️1線♠️1線♛1線✘1線✗✘2線✔︎2線♣️2線♦️2線♥️2線♠️2線♛2線✘2線✗✘3線✔︎3線♣️3線♦️3線♥️3線♠️3線♛3線✘3線✗✘4線✔︎4線♣️4線♦️4線♥️4線♠️4線♛4線✘4線✗✘5線✔︎5線♣️5線♦️5線♥️5線♠️5線♛5線✘5線✗✘6線✔︎6線♣️6線♦️6線♥️6線♠️6線♛6線✘6線✗✘7線✔︎7線♣️7線♦️7線♥️7線♠️7線♛7線✘7線✗✘"
+const _CbBid_name = "CbBid未設定(無睹倍)1線✔︎1線♣️1線♦️1線♥️1線♠️1線♛1線✘1線✗✘2線✔︎2線♣️2線♦️2線♥️2線♠️2線♛2線✘2線✗✘3線✔︎3線♣️3線♦️3線♥️3線♠️3線♛3線✘3線✗✘4線✔︎4線♣️4線♦️4線♥️4線♠️4線♛4線✘4線✗✘5線✔︎5線♣️5線♦️5線♥️5線♠️5線♛5線✘5線✗✘6線✔︎6線♣️6線♦️6線♥️6線♠️6線♛6線✘6線✗✘7線✔︎7線♣️7線♦️7線♥️7線♠️7線♛7線✘7線✗✘"
 
-var _CbBid_index = [...]uint16{0, 10, 20, 30, 40, 50, 57, 64, 74, 84, 94, 104, 114, 124, 131, 138, 148, 158, 168, 178, 188, 198, 205, 212, 222, 232, 242, 252, 262, 272, 279, 286, 296, 306, 316, 326, 336, 346, 353, 360, 370, 380, 390, 400, 410, 420, 427, 434, 444, 454, 464, 474, 484, 494, 501, 508, 518}
+var _CbBid_index = [...]uint16{0, 25, 35, 45, 55, 65, 75, 82, 89, 99, 109, 119, 129, 139, 149, 156, 163, 173, 183, 193, 203, 213, 223, 230, 237, 247, 257, 267, 277, 287, 297, 304, 311, 321, 331, 341, 351, 361, 371, 378, 385, 395, 405, 415, 425, 435, 445, 452, 459, 469, 479, 489, 499, 509, 519, 526, 533, 543}
 
 func (i CbBid) String() string {
-	i -= 1
 	if i >= CbBid(len(_CbBid_index)-1) {
-		return "CbBid(" + strconv.FormatInt(int64(i+1), 10) + ")"
+		return "CbBid(" + strconv.FormatInt(int64(i), 10) + ")"
 	}
 	return _CbBid_name[_CbBid_index[i]:_CbBid_index[i+1]]
 }

@@ -818,12 +818,23 @@ func (mr *RoomManager) PlayerJoin(user *RoomUser) {
 		//個人開叫提示, 前端 必須處理
 		//TODO : 確認禁叫品就是當前最新的叫品,前端(label.dart-setBidTable)可以方便處理
 		//bidder 表示下一個開叫牌者 前端(Player,觀眾席)必須處理
-		//zero 禁叫品項,因為是首叫所以禁止叫品是 重要 zeroBid 前端(Player,觀眾席)必須處理
-		//第三個參數:上一個叫牌者
-		//第四個參數: 上一次叫品
-		//第五個參數: 一線double value CbBid (  Db1 )
-		//第六個參數: 一線redouble value (ValueNotSet)
-		mr.sendBytesToPlayers(append([]uint8{}, bidder, zero, valueNotSet, valueNotSet, valueNotSet, valueNotSet), ClnRoomEvents.GamePrivateNotyBid)
+		//禁叫品項,因為是首叫所以禁止叫品是 重要 zeroBid 前端(Player,觀眾席)必須處理
+		//第三個參數:上一個叫牌者(ValueNotSet)
+		//第四個參數: 上一次叫品(ValueNotSet)
+		//第五個參數: 一線double value
+		//第六個參數: 一線double 開啟 (0:表示disable)
+		//第七個參數: 一線ReDouble value
+		//第八個參數: 一線ReDouble 開啟 (0:表示disable)
+		//   參考: GamePrivateNotyBid
+		mr.sendBytesToPlayers(append([]uint8{},
+			bidder,
+			zero,
+			valueNotSet,
+			valueNotSet,
+			uint8(Db1),
+			uint8(0),
+			uint8(Db1x2),
+			uint8(0)), ClnRoomEvents.GamePrivateNotyBid)
 		slog.Debug("", slog.String("開叫者", bidderName), slog.String("開叫者資訊", fmt.Sprintf("座位:%s,開叫值:%d", CbSeat(bidder), zero)))
 
 		// 注意 廣播觀眾提示開叫開始, 前端 必須處理
@@ -970,7 +981,7 @@ func (mr *RoomManager) zoneUsersByMap() (users map[uint8][]*skf.NSConn, ePlayer,
 	for i := range playerSeats {
 		zone = playerSeats[i]
 		users[zone] = make([]*skf.NSConn, 0, len(mr.Users[zone])-1) //-1 扣掉Player佔額
-		switch zone {
+		switch CbSeat(zone) {
 		case east: //east
 			player = ePlayer.NsConn
 		case south: //south
@@ -1008,7 +1019,7 @@ func (mr *RoomManager) zoneUsers() (users []*RoomUser, ePlayer, sPlayer, wPlayer
 	for i := range playerSeats {
 		zone = playerSeats[i]
 		//排除已在座位上的玩家
-		switch zone {
+		switch CbSeat(zone) {
 		case east:
 			player = ePlayer.NsConn
 		case south:
@@ -1032,7 +1043,7 @@ func (mr *RoomManager) zoneUsers() (users []*RoomUser, ePlayer, sPlayer, wPlayer
 func (mr *RoomManager) tablePlayers() (e, s, w, n *RoomUser) {
 	mr.Do(func(i any) {
 		v := i.(*tablePlayer)
-		switch v.zone {
+		switch CbSeat(v.zone) {
 		case east:
 			e = v.player
 		case south:
@@ -1124,7 +1135,7 @@ func (mr *RoomManager) PlayersCardValue() (e, s, w, n uint8) {
 	// TODO 是否需要 Lock 存取
 	mr.Do(func(i any) {
 		v := i.(*tablePlayer)
-		switch v.zone {
+		switch CbSeat(v.zone) {
 		case east:
 			e = v.value
 		case south:
@@ -1175,7 +1186,7 @@ func (mr *RoomManager) SeatShift(seat uint8) (next uint8) {
 		slog.Debug("移動位置SeatShift", utilog.Err(response.err))
 		return valueNotSet
 	}
-	slog.Debug("移動位置SeatShift", slog.Bool("遊戲開始", response.isGameStart), slog.Int("回合動作", int(response.aa)))
+	//slog.Debug("移動位置SeatShift", slog.Bool("遊戲開始", response.isGameStart), slog.Int("回合動作", int(response.aa)))
 	return response.seat
 }
 
@@ -1445,20 +1456,21 @@ func (mr *RoomManager) SendPayloadToPlayers(eventName string, payload payloadDat
 		err          error
 		errFmtString = "%s玩家連線中斷"
 		connections  = make(map[uint8]*skf.NSConn)
+		e, s, w, n   = uint8(east), uint8(south), uint8(west), uint8(north)
 	)
 
-	connections[east], connections[south], connections[west], connections[north] = mr.AcquirePlayerConnections()
+	connections[e], connections[s], connections[w], connections[n] = mr.AcquirePlayerConnections()
 
-	if connections[east] == nil {
+	if connections[e] == nil {
 		err = fmt.Errorf(errFmtString, "east")
 	}
-	if connections[south] == nil {
+	if connections[s] == nil {
 		err = fmt.Errorf(errFmtString, "north")
 	}
-	if connections[west] == nil {
+	if connections[w] == nil {
 		err = fmt.Errorf(errFmtString, "west")
 	}
-	if connections[north] == nil {
+	if connections[n] == nil {
 		err = fmt.Errorf(errFmtString, "north")
 	}
 
@@ -1508,20 +1520,21 @@ func (mr *RoomManager) SendPayloadsToPlayers(eventName string, payloads ...paylo
 		err          error
 		errFmtString = "%s玩家連線中斷"
 		connections  = make(map[uint8]*skf.NSConn)
+		e, s, w, n   = uint8(east), uint8(south), uint8(west), uint8(north)
 	)
 
-	connections[east], connections[south], connections[west], connections[north] = mr.AcquirePlayerConnections()
+	connections[e], connections[s], connections[w], connections[n] = mr.AcquirePlayerConnections()
 
-	if connections[east] == nil {
+	if connections[e] == nil {
 		err = fmt.Errorf(errFmtString, "east")
 	}
-	if connections[south] == nil {
+	if connections[s] == nil {
 		err = fmt.Errorf(errFmtString, "north")
 	}
-	if connections[west] == nil {
+	if connections[w] == nil {
 		err = fmt.Errorf(errFmtString, "west")
 	}
-	if connections[north] == nil {
+	if connections[n] == nil {
 		err = fmt.Errorf(errFmtString, "north")
 	}
 
@@ -1752,7 +1765,7 @@ func (mr *RoomManager) DevelopBroadcastTest(user *RoomUser) {
 
 	//byte
 	//廣播byte  👍
-	payloads := []uint8{north}
+	payloads := []uint8{uint8(north)}
 	mr.BroadcastBytes(nil, eventName, roomName, payloads)
 	time.Sleep(time.Second * 2)
 
@@ -1796,8 +1809,8 @@ func (mr *RoomManager) DevelopPrivatePayloadTest(user *RoomUser) {
 	p := payloadData{}
 	//case1 byte ,前端判斷 msg.value 只要不為null, 就可取出byte值
 	p.PayloadType = ByteType
-	p.Data = []byte{east}
-	p.Player = east
+	p.Data = []byte{uint8(east)}
+	p.Player = uint8(east)
 	p.ProtoData = nil
 	mr.send(user.NsConn, eventName, p) // 👍
 

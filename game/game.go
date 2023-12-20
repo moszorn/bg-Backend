@@ -117,17 +117,15 @@ func (g *Game) Close() {
 
 // ----------------------engine
 
-// setEnginePlayer, Old: setEnginePlaySeat 引擎玩家更替, 新局,或換新的一局時呼叫
-func (g *Game) setEnginePlayer(player uint8, next uint8) {
-	// player 設定player當前玩家
-	// next 下一個玩家
+// 設定當家,結算該回合比牌時會用到
+func (g *Game) setEnginePlayer(player uint8) {
+	// player 設定player當前玩家, 比牌算牌時,需要知道current seat
 	g.engine.SetCurrentSeat(player)
-	g.engine.SetNextSeat(next)
 }
 
 // --------------------- seat
 
-// SeatShift , Old: setSeatAndGetNextPlayer 房間座位更替,新局,或換新的一局時呼叫
+// SeatShift , 座位更替,新局時呼叫
 func (g *Game) SeatShift(seat uint8) (nextSeat uint8) {
 	return g.roomManager.SeatShift(seat)
 }
@@ -143,10 +141,10 @@ func (g *Game) start() (currentPlayer, limitBiddingValue uint8) {
 	//設定Engine當前玩家與下一個玩家
 
 	//step1. 設定位置環形
-	nextPlayer := g.SeatShift(currentPlayer)
+	//nextPlayer := g.SeatShift(currentPlayer)
 
 	//設定引擎
-	g.setEnginePlayer(currentPlayer, nextPlayer)
+	//g.setEnginePlayer(nextPlayer)
 
 	return
 }
@@ -186,28 +184,138 @@ func (g *Game) _(user *RoomUser) {
 	*/
 }
 
+/*
+	//移動環形,並校準座位
+	nextPlayer := g.SeatShift(currentPlayer)
+	g.setEnginePlayer(currentPlayer, nextPlayer)
+
+	//TODO 未來 工作
+	//以首引生成 RoundSuit keep
+	//g.roundSuitKeeper = NewRoundSuitKeep(leadPlayer)
+*/
+//
 func (g *Game) GamePrivateNotyBid(currentBidder *RoomUser) error {
 
-	slog.Debug("GamePrivateNotyBid", slog.String("傳入參數",
-		fmt.Sprintf("%s(%s) contract: %s (%d)", currentBidder.Name, CbSeat(currentBidder.Zone8), CbBid(currentBidder.Bid8), currentBidder.Bid8)))
+	nextLimitBidding, db1, db2 := g.engine.GetNextBid(currentBidder.Zone8, currentBidder.Bid8)
 
+	g.setEnginePlayer(currentBidder.Zone8)
+
+	//移動環形,並校準座位
+	next := g.SeatShift(currentBidder.Zone8)
+
+	complete, needReBid := g.engine.IsBidFinishedOrReBid()
+	switch complete {
+	case false: //仍在競叫中
+		//第一個參數: 表示下一個開叫牌者 前端(Player,觀眾席)必須處理
+		//第二個參數: 禁叫品項,因為是首叫所以禁止叫品是 重要 zeroBid 前端(Player,觀眾席)必須處理
+		//第三個參數: 上一個叫牌者
+		//第四個參數: 上一次叫品
+		g.roomManager.sendBytesToPlayers(append([]uint8{},
+			next,
+			nextLimitBidding,
+			currentBidder.Zone8,
+			currentBidder.Bid8,
+			db1.value,
+			db1.isOn,
+			db2.value,
+			db2.isOn), ClnRoomEvents.GamePrivateNotyBid)
+
+	case true: //競叫完成
+		fmt.Printf("競叫完成之- needReBid: %t\n", needReBid)
+		switch needReBid {
+		case true: //重新洗牌,重新競叫
+
+			//清除叫牌紀錄
+			g.engine.ClearBiddingState()
+
+			//現出另三家的底牌,三秒後在重新發新牌
+			g.roomManager.SendPlayersHandDeal()
+			time.Sleep(time.Second * 3)
+
+			// StartOpenBid會更換新一局,因此玩家順序也做了更動
+			bidder, _ := g.start()
+
+			//前端重新叫訊號
+			reBidSignal := valueNotSet
+
+			//重發牌
+			g.roomManager.SendDeal()
+
+			//送出reBid
+			g.roomManager.sendBytesToPlayers(append([]uint8{},
+				bidder,
+				valueNotSet,
+				reBidSignal,
+				valueNotSet,
+				uint8(Db1),
+				uint8(0),
+				uint8(Db1x2),
+				uint8(0)),
+				ClnRoomEvents.GamePrivateNotyBid)
+
+		case false: //競叫完成,遊戲開始
+
+			lead, declarer, dummy, suit, finallyBidding, err := g.engine.GameStartPlayInfo()
+
+			if err != nil {
+				if errors.Is(err, ErrUnContract) {
+					slog.Error("GamePrivateNotyBid", slog.String("FYI", fmt.Sprintf("合約有問題,只能在合約確定才能呼叫GameStartPlayInfo,%s", utilog.Err(err))))
+					return err
+				}
+			}
+
+			g.engine.ClearBiddingState()
+
+			//TODO 未來 工作
+			//以首引生成 RoundSuit keep
+			//g.roundSuitKeeper = NewRoundSuitKeep(leadPlayer)
+
+			//nextPlayer := g.SeatShift(leadPlayer)
+			//g.setEnginePlayer(leadPlayer, nextPlayer)
+
+			//送出首引封包
+			// 封包位元依序為:首引, 莊家, 夢家, 合約王牌,王牌字串, 合約線位, 線位字串
+			contractPayload := cb.Contract{
+				Lead:           uint32(lead),
+				Declarer:       uint32(declarer),
+				Dummy:          uint32(dummy),
+				Suit:           uint32(suit),
+				Contract:       uint32(finallyBidding.contract),
+				SuitString:     fmt.Sprintf("%s", CbSuit(suit)),
+				ContractString: fmt.Sprintf("%s", finallyBidding.contract),
+				DoubleString:   fmt.Sprintf("%s", finallyBidding.dbType),
+			}
+
+			slog.Debug("GamePrivateNotyBid[競叫完畢]",
+				slog.String(fmt.Sprintf("莊:%s  夢:%s  引:%s", CbSeat(declarer), CbSeat(dummy), CbSeat(lead)),
+					fmt.Sprintf("花色: %s   合約: %s   賭倍: %s ", CbSuit(suit), finallyBidding.contract, finallyBidding.dbType),
+				),
+			)
+
+			g.roomManager.SendPayloadsToPlayers(ClnRoomEvents.GameNotyFirstLead, payloadData{
+				ProtoData:   &contractPayload,
+				PayloadType: ProtobufType,
+			})
+		}
+	}
+	return nil
+}
+
+/*
+func (g *Game) GamePrivateNotyBid(currentBidder *RoomUser) error {
 	if !g.engine.IsBidValue8Valid(currentBidder.Bid8) {
-		slog.Warn("GamePrivateNotyBid",
-			slog.String("FYI",
-				fmt.Sprintf("%s 叫品：%d ( %s  ) %s",
-					currentBidder.Name,
-					currentBidder.Bid8,
-					CbBid(currentBidder.Bid8),
-					ErrBiddingInvalid)))
 		return ErrBiddingInvalid
 	}
-	switch isContractDone, isReBid := g.engine.IsLastBidOrReBid(currentBidder.Bid8); isContractDone {
+
+	var (
+		isContractDone bool
+		isReBid        bool
+	)
+
+	switch isContractDone, isReBid = g.engine.IsLastBidOrReBid(currentBidder.Bid8); isContractDone {
 	case false:
-
-		slog.Debug("GamePrivateNotyBid", slog.String("合約結果", "叫牌仍持續中 "))
-
 		//叫牌仍持續中
-		currentPlayer, bidValueLimit, _ := g.engine.GetNextBid(currentBidder.Zone8, currentBidder.Bid8, currentBidder.Zone8|currentBidder.Bid8)
+		currentPlayer, bidValueLimit, db, db2, _ := g.engine.GetNextBid(currentBidder.Zone8, currentBidder.Bid8, currentBidder.Zone8|currentBidder.Bid8)
 
 		//移動環形,並校準座位
 		nextPlayer := g.SeatShift(currentPlayer)
@@ -217,14 +325,11 @@ func (g *Game) GamePrivateNotyBid(currentBidder *RoomUser) error {
 		//第二個參數: 禁叫品項,因為是首叫所以禁止叫品是 重要 zeroBid 前端(Player,觀眾席)必須處理
 		//第三個參數: 上一個叫牌者
 		//第四個參數: 上一次叫品
-		g.roomManager.sendBytesToPlayers(append([]uint8{}, currentPlayer, bidValueLimit, currentBidder.Zone8, currentBidder.Bid8), ClnRoomEvents.GamePrivateNotyBid)
-
+		g.roomManager.sendBytesToPlayers(append([]uint8{}, currentPlayer, bidValueLimit, currentBidder.Zone8, currentBidder.Bid8, db, db2), ClnRoomEvents.GamePrivateNotyBid)
 		//TODO 廣播觀眾未實作
-
 	case true:
 		//合約底定
-		if !isReBid /*不需重新競叫*/ {
-			// Bug
+		if !isReBid {
 			leadPlayer, declarer, dummy, contractSuit, rcd, err := g.engine.GameStartPlayInfo(currentBidder.Zone8)
 			if err != nil {
 				if errors.Is(err, ErrUnContract) {
@@ -232,11 +337,6 @@ func (g *Game) GamePrivateNotyBid(currentBidder *RoomUser) error {
 					return err
 				}
 			}
-
-			//contractSuit =  Suit | rawBid8帶位置的叫品
-			slog.Debug("GamePrivateNotyBid", slog.String("合約結果",
-				fmt.Sprintf("合約底定不需重新競叫, 首引:%s 莊家:%s 夢家: %s 合約: %s  [ %s ], Double: %t (%s)",
-					CbSeat(leadPlayer), CbSeat(declarer), CbSeat(dummy), CbSuit(contractSuit), rcd.contract, rcd.isDouble, rcd.dbType)))
 
 			g.engine.ClearBiddingState()
 
@@ -267,9 +367,7 @@ func (g *Game) GamePrivateNotyBid(currentBidder *RoomUser) error {
 
 			//TODO 廣播觀眾未實作
 
-		} else /*叫牌合約流局底定需要重新競叫*/ {
-
-			slog.Debug("GamePrivateNotyBid", slog.String("合約結果", "叫牌合約流局底定需要重新競叫"))
+		} else {
 
 			//送出第一次中發牌封包,前端 清空,重新設定BidTable
 			g.roomManager.sendBytesToPlayers(append([]uint8{}, valueNotSet, valueNotSet, valueNotSet, valueNotSet),
@@ -280,7 +378,6 @@ func (g *Game) GamePrivateNotyBid(currentBidder *RoomUser) error {
 
 			//現出另三家的底牌,三秒後在重新發新牌
 			g.roomManager.SendPlayersHandDeal()
-			fmt.Println("waiting ................................")
 			time.Sleep(time.Second * 3)
 
 			// StartOpenBid會更換新一局,因此玩家順序也做了更動
@@ -294,7 +391,7 @@ func (g *Game) GamePrivateNotyBid(currentBidder *RoomUser) error {
 		}
 	}
 	return nil
-}
+} */
 
 /* ======================================================================================== */
 

@@ -161,9 +161,9 @@ func (rooms AllRoom) GamePrivateNotyBid(ns *skf.NSConn, m skf.Message) error {
 		return er
 	}
 	//g.PlayerLeave(u)
-	slog.Info("GamePrivateNotyBid",
+	slog.Info("入口",
 		slog.String("FYI",
-			fmt.Sprintf("叫者:%s(%s),遊戲中:%t 叫品:%s  (%d)", u.Name, game.CbSeat(u.Zone8), u.IsSitting, game.CbBid(u.Bid), u.Bid)))
+			fmt.Sprintf("叫者:%s(%s),遊戲中:%t 叫品:(%d)%s  ", u.Name, game.CbSeat(u.Zone8), u.IsSitting, u.Bid, game.CbBid(u.Bid))))
 
 	return g.GamePrivateNotyBid(u)
 }

@@ -258,13 +258,13 @@ func (mgr *SeatManager) seatPlays() (eastPlay, southPlay, westPlay, northPlay *R
 	mgr.Do(func(i any) {
 		v := i.(*seatItem)
 		switch *v.Name {
-		case east:
+		case uint8(east):
 			eastPlay = v.User
-		case south:
+		case uint8(south):
 			southPlay = v.User
-		case west:
+		case uint8(west):
 			westPlay = v.User
-		case north:
+		case uint8(north):
 			northPlay = v.User
 		}
 	})
