@@ -10,8 +10,10 @@ import (
 	"time"
 
 	"github.com/moszorn/pb/cb"
+	//"github.com/moszorn/pb/cb"
+	//"github.com/moszorn/pb/cb"
 	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/types/known/anypb"
+	//"google.golang.org/protobuf/types/known/anypb"
 
 	"github.com/moszorn/pb"
 	utilog "github.com/moszorn/utils/log"
@@ -389,16 +391,14 @@ func (mr *RoomManager) Start() {
 				ringItem, result.isOnSeat = mr.findPlayer(req.player.Zone8)
 
 				if ringItem == nil || !result.isOnSeat {
-					result.player = nil
-					result.playerName = req.player.Name
-					result.err = errors.New(fmt.Sprintf("(%s)%s不在遊戲中", CbSeat(req.player.Zone8), req.player.Name))
+					result.err = errors.New(fmt.Sprintf("(%s)已離開/斷線", CbSeat(req.player.Zone8)))
 				} else {
-					slog.Debug("RoomManager(Loop-_FindPlayer)",
-						slog.String("姓名", ringItem.player.Name),
-						slog.String("座位(Zone8)", fmt.Sprintf("%s", CbSeat(ringItem.player.Zone8))),
-						slog.Int("seat(zone)", int(ringItem.zone)),
-						/* slog.String("Conn", shortConnID(ringItem.player.NsConn)),*/
-					)
+					/*
+						slog.Debug("RoomManager(Loop-_FindPlayer)",
+							slog.String("姓名", ringItem.player.Name),
+							slog.String("座位(Zone8)", fmt.Sprintf("%s", CbSeat(ringItem.player.Zone8))),
+							slog.Int("seat(zone)", int(ringItem.zone)),
+						)*/
 					//不管isOnSeat有否在座位上,都登記尋找的玩家名稱
 					result.playerName = ringItem.player.Name
 					if result.isOnSeat {
@@ -514,7 +514,10 @@ func (mr *RoomManager) UserJoinTableInfo(user *RoomUser) {
 		slog.Error("UserJoinTableInfo錯誤", utilog.Err(rep.err))
 	}
 
-	var pp = pb.TableInfo{}
+	var pp = pb.TableInfo{
+		/*底下是該桌組態設定*/
+		CountDown: GamePlayCountDown,
+	}
 
 	//觀眾資訊(房間中的人):包含沒在座位上的與在座位上的
 	pp.Audiences = make([]*pb.PlayingUser, 0, len(rep.audiences)+PlayersLimit)
@@ -775,18 +778,17 @@ func (mr *RoomManager) PlayerJoin(user *RoomUser) {
 		IsSitting:  response.isOnSeat,
 	}
 
-	payloads := payloadData{
+	//通知(private)個人玩家Player上座了
+	payload := payloadData{
 		ProtoData:   &pbPlayers,
 		Player:      response.seat, /*必須指定送給誰*/
 		PayloadType: ProtobufType,
 	}
-	mr.SendPayloadToPlayer(ClnRoomEvents.TablePrivateOnSeat, payloads)
+	mr.SendPayloadToPlayer(ClnRoomEvents.TablePrivateOnSeat, payload)
 
-	payload := payloadData{
-		ProtoData:   pbPlayers.ToPlayer,
-		Player:      response.seat,
-		PayloadType: ProtobufType,
-	}
+	//廣播(public)通知整區,ToPlayer玩家上座
+	payload.ProtoData = pbPlayers.ToPlayer
+	// Bug 底下SendPayLoadsToZone 可能會曝光.因為瀏覽器玩家多種登入的關係
 	mr.SendPayloadsToZone(ClnRoomEvents.TableOnSeat, user.NsConn, payload)
 
 	// 順利坐到位置剛好滿四人局開始
@@ -800,19 +802,18 @@ func (mr *RoomManager) PlayerJoin(user *RoomUser) {
 		slog.Info("PlayerJoin之競叫開始", slog.String("加入遊戲者", user.Name), slog.String("首叫者", fmt.Sprintf("%s", CbSeat(bidder))))
 
 		//遊戲找出桌中找出開叫者
-		bidderConn, bidderName, isOnSeat, _ := mr.FindPlayer(bidder)
-		if !isOnSeat {
-			slog.Error("PlayerJoin無法開叫", utilog.Err(fmt.Errorf("開叫者座位%s可能斷線,或連線掛了", CbSeat(bidder))))
-			panic("嚴重錯誤,玩家斷線不在位置上,無法開叫")
-			//TODO 廣播玩家斷線
-		}
-
+		/*		bidderConn, bidderName, isOnSeat, _ := mr.FindPlayer(bidder)
+				if !isOnSeat {
+					slog.Error("PlayerJoin無法開叫", utilog.Err(fmt.Errorf("開叫者座位%s可能斷線,或連線掛了", CbSeat(bidder))))
+					panic("嚴重錯誤,玩家斷線不在位置上,無法開叫")
+					//TODO 廣播玩家斷線
+				}
+		*/
 		// 發牌
 		mr.SendDeal()
 
 		//延遲,是因為最後進來的玩家前端render速度太慢,會導致接收到NotyBid時來不及,所以延遲幾秒
 		//time.Sleep(time.Millisecond * 700)
-		slog.Debug("PlayerJoin玩家連線", slog.Bool("連線不存在?", bidderConn == nil), slog.String("conn", bidderConn.String()))
 
 		// 注意 需要分別發送給豬面上的玩家通知 GamePrivateNotyBid
 		//個人開叫提示, 前端 必須處理
@@ -826,33 +827,28 @@ func (mr *RoomManager) PlayerJoin(user *RoomUser) {
 		//第七個參數: 一線ReDouble value
 		//第八個參數: 一線ReDouble 開啟 (0:表示disable)
 		//   參考: GamePrivateNotyBid
-
 		notyBid := cb.NotyBid{
-			Bidder:   uint32(bidder),
-			BidStart: uint32(zero),
-			Double1:  uint32(Db1),
-			Double2:  uint32(Db2),
-			Btn:      cb.NotyBid_disable_all,
+			Bidder:     uint32(bidder),
+			BidStart:   uint32(zero),
+			LastBidder: uint32(valueNotSet), /*一定設,否則前端gauge無法判斷要停止的zone*/
+			Double1:    uint32(Db1),
+			Double2:    uint32(Db2),
+			Btn:        cb.NotyBid_disable_all,
 		}
 
-		mr.SendPayloadToPlayers(ClnRoomEvents.GamePrivateNotyBid, payloadData{
-			ProtoData:   &notyBid,
-			PayloadType: ProtobufType,
-		})
+		payload.ProtoData = &notyBid
+		payload.PayloadType = ProtobufType
 
-		/*		mr.sendBytesToPlayers(append([]uint8{},
-				bidder,
-				zero,
-				valueNotSet,
-				valueNotSet,
-				uint8(Db1),
-				uint8(0),
-				uint8(Db1x2),
-				uint8(0)), ClnRoomEvents.GamePrivateNotyBid)
-		*/slog.Debug("PlayerJoin送出封包gpnb", slog.String("開叫者", bidderName), slog.String("開叫者資訊", fmt.Sprintf("座位:%s,開叫值:%d", CbSeat(bidder), zero)))
+		// 重要
+		// memo 底下通知順序很重要,一定要先Public,才Private, 因為Public前端會先初始 Bidding Table 設定
+		//  step1 必須先送出Public (GameNotyBid),進行前端Bidding Table生成
+		//  step2 才能再送出Private (GamePrivateNotyBid) 給當事人
+		mr.SendPayloadToPlayers(ClnRoomEvents.GameNotyBid, payload, pb.SceneType_game) //廣播Public
 
-		// 注意 廣播觀眾提示開叫開始, 前端 必須處理
-		//mr.BroadcastBytes(bidderConn, ClnRoomEvents.GameNotyBid, mr.g.name, bytesPayload)
+		time.Sleep(time.Millisecond * 400)
+		//指定傳送給 bidder 開叫
+		payload.Player = bidder
+		mr.SendPayloadToPlayer(ClnRoomEvents.GamePrivateNotyBid, payload) //私人Private
 	}
 
 }
@@ -950,14 +946,14 @@ func (mr *RoomManager) findPlayer(seat uint8) (player *tablePlayer, exist bool) 
 }
 
 // FindPlayer 指定座位上的玩家(並非針對觀眾)
-func (mr *RoomManager) FindPlayer(seat uint8) (nsConn *skf.NSConn, playerName string, isOnSeat bool, isGameStart bool) {
+func (mr *RoomManager) FindPlayer(seat uint8) (nsConn *skf.NSConn, playerName string, isOnSeat, isGameStart bool, err error) {
 	tps := &tableRequest{
 		topic:  _FindPlayer,
 		player: &RoomUser{Zone8: seat},
 	}
 	rep := mr.table.Probe(tps)
 	if rep.err != nil {
-		slog.Error("FindPlayer", utilog.Err(rep.err))
+		err = rep.err
 		return
 	}
 
@@ -967,12 +963,9 @@ func (mr *RoomManager) FindPlayer(seat uint8) (nsConn *skf.NSConn, playerName st
 	isGameStart = rep.isGameStart
 
 	if !isOnSeat {
-		slog.Error("FindPlayer)",
-			utilog.Err(
-				fmt.Errorf("找尋%s座位上的玩家%s不在座位上", CbSeat(seat), playerName)),
-		)
+		err = errors.New(fmt.Sprintf("找尋%s座位上的玩家%s不在座位上", CbSeat(seat), playerName))
+		return
 	}
-
 	return
 }
 
@@ -1464,38 +1457,57 @@ func (mr *RoomManager) SendPayloadToPlayers(eventName string, payload payloadDat
 	}
 }*/
 
-// SendPayloadToPlayers 對遊戲中的玩家發一則訊息
-func (mr *RoomManager) SendPayloadToPlayers(eventName string, payload payloadData) {
+// SendPayloadToPlayers 對遊戲中四位玩家發一則訊息,
+// sceneType表示正於何種場景進行訊息發送,若有人斷線可作相應處理,例如:遊戲場景,送出清除遊戲場警訊號
+func (mr *RoomManager) SendPayloadToPlayers(eventName string, payload payloadData, sceneType pb.SceneType) error {
 	var (
 		err          error
-		errFmtString = "%s玩家連線中斷"
+		errFmtString = "%s 玩家連線中斷"
 		connections  = make(map[uint8]*skf.NSConn)
 		e, s, w, n   = uint8(east), uint8(south), uint8(west), uint8(north)
+		seat         uint8
 	)
 
 	connections[e], connections[s], connections[w], connections[n] = mr.AcquirePlayerConnections()
 
 	if connections[e] == nil {
-		err = fmt.Errorf(errFmtString, "east")
+		err = fmt.Errorf(errFmtString, east)
+		seat = e
 	}
 	if connections[s] == nil {
-		err = fmt.Errorf(errFmtString, "north")
+		err = fmt.Errorf(errFmtString, south)
+		seat = s
 	}
 	if connections[w] == nil {
-		err = fmt.Errorf(errFmtString, "west")
+		err = fmt.Errorf(errFmtString, west)
+		seat = w
 	}
 	if connections[n] == nil {
-		err = fmt.Errorf(errFmtString, "north")
+		err = fmt.Errorf(errFmtString, north)
+		seat = n
 	}
 
 	if err != nil {
 		slog.Error("連線中斷(SendPayloadToPlayers)", utilog.Err(err))
 		//TODO 對未斷線玩家,送出現在狀況,好讓前端popup
 		for _, nsConn := range connections {
+			// TODO 通知前端清除畫面,並告知有人斷線
 			if nsConn != nil {
-				nsConn.EmitBinary("popup-warning", []byte(err.Error()))
+				payload.PayloadType = ProtobufType
+				payload.ProtoData = &pb.ErrMessage{
+					Msg:   err.Error(),
+					Alert: false,
+					Seat:  uint32(seat),
+					Scene: sceneType, /*表示哪種訊息*/
+				}
+				if errAgain := mr.send(nsConn, ClnRoomEvents.GameAlertMessage, payload); errAgain != nil {
+					// 吞掉再一次錯誤,因為上面的錯誤會通知已經通知前端處理了
+					slog.Error("SendPayloadToPlayers", utilog.Err(errAgain))
+				}
 			}
 		}
+		//回傳錯誤好讓呼叫者清空遊戲狀態
+		return err
 
 	} else {
 		var player *skf.NSConn
@@ -1509,25 +1521,31 @@ func (mr *RoomManager) SendPayloadToPlayers(eventName string, payload payloadDat
 			}
 		}
 	}
+	return nil
 }
 
-// SendPayloadToPlayer 發送訊息給payload中指定的player, 指定eventName, 訊息 payload (期內部已經指定seat(player)了)
-func (mr *RoomManager) SendPayloadToPlayer(eventName string, payload payloadData /*, seat uint8*/) {
-	slog.Debug("SendPayloadsToPlayer", slog.String("發送", fmt.Sprintf("%s(%d)", CbSeat(payload.Player), payload.Player)))
+// SendPayloadToPlayer 發送訊息給payload中指定的player, 指定eventName, 訊息 payload (payload內部必須指定seat(player))
+func (mr *RoomManager) SendPayloadToPlayer(eventName string, payload payloadData /*, seat uint8*/) error {
+	//slog.Debug("SendPayloadsToPlayer", slog.String("發送", fmt.Sprintf("%s(%d)", CbSeat(payload.Player), payload.Player)))
 	//底下dbg用可以移除
-	conn, name, found, _ := mr.FindPlayer(payload.Player)
-	slog.Debug("SendPayloadsToPlayer", slog.String("姓名", name), slog.Bool("found", found))
+	conn, name, found, _, err := mr.FindPlayer(payload.Player)
+
+	if err != nil {
+		return err
+	}
+
 	if !found {
 		slog.Error("SendPayloadsToPlayer", utilog.Err(fmt.Errorf("未找到%s可進行發送", name)))
-		return
+		return nil
 	}
-	err := mr.send(conn, eventName, payload)
+	err = mr.send(conn, eventName, payload)
 	if err != nil {
-		slog.Error("payload發送失敗(SendPayloadsToPlayer)", utilog.Err(err))
+		return err
 	}
+	return nil
 }
 
-// SendPayloadsToPlayers 同時對遊戲中4玩家發送訊息(payload), 坑) 注意: 每個payload都要指定player,否則發不出去
+// SendPayloadsToPlayers 同時對遊戲中4玩家發送訊息(payload), 坑) 注意: 每個payload都要指定player,否則發不出去 TODO這個方法有點脫累贅褲子放屁地
 func (mr *RoomManager) SendPayloadsToPlayers(eventName string, payloads ...payloadData) {
 
 	var (
@@ -1794,26 +1812,28 @@ func (mr *RoomManager) DevelopBroadcastTest(user *RoomUser) {
 
 	//protobuf  廣播使用 protobuf,就不能再使用 string, values 因為是前端限制
 	//廣播  👍 Protobuf
-	message := pb.MessagePacket{
-		Type:    pb.MessagePacket_Admin,
-		Content: "hello MessagePacket",
-		Tt:      pb.LocalTimestamp(time.Now()),
-		RoomId:  12,
-		From:    "蔡忠正",
-		To:      "Client",
-	}
-	anyItem, err := anypb.New(&message)
-	if err != nil {
-		panic(err)
-	}
+	/*
+		message := pb.MessagePacket{
+			Type:    pb.MessagePacket_Admin,
+			Content: "hello MessagePacket",
+			Tt:      pb.LocalTimestamp(time.Now()),
+			RoomId:  12,
+			From:    "蔡忠正",
+			To:      "Client",
+		}
+		anyItem, err := anypb.New(&message)
+		if err != nil {
+			panic(err)
+		}
 
-	packet := pb.ProtoPacket{
-		AnyItem: anyItem,
-		Tt:      pb.LocalTimestamp(time.Now()),
-		Topic:   pb.TopicType_Message,
-		SN:      99,
-	}
-	mr.BroadcastProtobuf(nil, eventName, roomName, &packet)
+		packet := pb.ProtoPacket{
+			AnyItem: anyItem,
+			Tt:      pb.LocalTimestamp(time.Now()),
+			Topic:   pb.TopicType_Message,
+			SN:      99,
+		}
+		mr.BroadcastProtobuf(nil, eventName, roomName, &packet)
+	*/
 }
 
 func (mr *RoomManager) DevelopPrivatePayloadTest(user *RoomUser) {
@@ -1839,34 +1859,36 @@ func (mr *RoomManager) DevelopPrivatePayloadTest(user *RoomUser) {
 	*/
 
 	//case3  👍 proto ,前端判斷 msg.pbody只要不為null, 就可取出pbody(protobuf)值
-	p.PayloadType = ProtobufType
-	message := pb.MessagePacket{
-		Type:    pb.MessagePacket_Admin,
-		Content: "hello MessagePacket",
-		Tt:      pb.LocalTimestamp(time.Now()),
-		RoomId:  12,
-		From:    "Server",
-		To:      "Client",
-	}
-	anyItem, err := anypb.New(&message)
-	if err != nil {
-		panic(err)
-	}
+	/*
+		p.PayloadType = ProtobufType
+		message := pb.MessagePacket{
+			Type:    pb.MessagePacket_Admin,
+			Content: "hello MessagePacket",
+			Tt:      pb.LocalTimestamp(time.Now()),
+			RoomId:  12,
+			From:    "Server",
+			To:      "Client",
+		}
+		anyItem, err := anypb.New(&message)
+		if err != nil {
+			panic(err)
+		}
 
-	packet := pb.ProtoPacket{
-		AnyItem: anyItem,
-		Tt:      pb.LocalTimestamp(time.Now()),
-		Topic:   pb.TopicType_Message,
-		SN:      99,
-	}
-	p.ProtoData = &packet
-	mr.send(user.NsConn, eventName, p) // 👍
+		packet := pb.ProtoPacket{
+			AnyItem: anyItem,
+			Tt:      pb.LocalTimestamp(time.Now()),
+			Topic:   pb.TopicType_Message,
+			SN:      99,
+		}
+		p.ProtoData = &packet
+		mr.send(user.NsConn, eventName, p) // 👍
 
-	//case4 String ,前端判斷 msg.body只要不為null, 就可取出string值
-	p.PayloadType = ByteType
-	p.Data = p.Data[:]
-	p.Data = []uint8("人間にんげん")
-	mr.send(user.NsConn, eventName, p) // 👍
+		//case4 String ,前端判斷 msg.body只要不為null, 就可取出string值
+		p.PayloadType = ByteType
+		p.Data = p.Data[:]
+		p.Data = []uint8("人間にんげん")
+		mr.send(user.NsConn, eventName, p) // 👍
+	*/
 }
 
 // 檢驗BroadcastXXXX後的結果,並log錯誤

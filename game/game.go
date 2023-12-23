@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/moszorn/pb"
 	"github.com/moszorn/pb/cb"
 	utilog "github.com/moszorn/utils/log"
 	"github.com/moszorn/utils/skf"
@@ -23,53 +24,65 @@ type (
 	roomUserCounter func(nsConn *skf.NSConn, roomName string)
 )
 
-type PayloadType uint8
+type (
+	PayloadType uint8
+)
 
 const (
 	ByteType PayloadType = iota
 	ProtobufType
 )
 
-type payloadData struct {
-	Player      uint8         //代表player seat 通常針對指定的玩家, 表示Zone的情境應該不會發生
-	Data        []uint8       // 可以是byte, bytes
-	ProtoData   proto.Message // proto
-	PayloadType PayloadType   //這個 payload 屬於那種型態的封	包
-}
+type (
+	payloadData struct {
+		Player      uint8         //代表player seat 通常針對指定的玩家, 表示Zone的情境應該不會發生
+		Data        []uint8       // 可以是byte, bytes
+		ProtoData   proto.Message // proto
+		PayloadType PayloadType   //這個 payload 屬於那種型態的封	包
+	}
 
-type Game struct { // 玩家進入房間, 玩家進入遊戲,玩家離開房間,玩家離開遊戲
+	Game struct { // 玩家進入房間, 玩家進入遊戲,玩家離開房間,玩家離開遊戲
 
-	Shutdown context.CancelFunc
+		Shutdown context.CancelFunc
 
-	//計數入房間的人數,由UserCounter而設定
-	CounterAdd roomUserCounter
-	CounterSub roomUserCounter
+		//計數入房間的人數,由UserCounter而設定
+		CounterAdd roomUserCounter
+		CounterSub roomUserCounter
 
-	// 未來 當遊戲桌關閉時,記得一同關閉channel 以免leaking
-	roomManager *RoomManager //管理遊戲房間所有連線(觀眾,玩家),與當前房間(Game)中的座位狀態
-	engine      *Engine
+		// 未來 當遊戲桌關閉時,記得一同關閉channel 以免leaking
+		roomManager *RoomManager //管理遊戲房間所有連線(觀眾,玩家),與當前房間(Game)中的座位狀態
+		engine      *Engine
 
-	roundSuitKeeper *RoundSuitKeep
+		roundSuitKeeper *RoundSuitKeep
 
-	// Key: Ring裡的座位指標(SeatItem.Name), Value:牌指標
-	// 並且同步每次出牌結果(依照是哪一家打出什牌並該手所打出的牌設成0指標
-	Deck map[*uint8][]*uint8
-	//遊戲中各家的持牌,會同步手上的出牌,打出的牌會設成0x0 CardCover
-	deckInPlay map[uint8]*[NumOfCardsOnePlayer]uint8
+		// Key: Ring裡的座位指標(SeatItem.Name), Value:牌指標
+		// 並且同步每次出牌結果(依照是哪一家打出什牌並該手所打出的牌設成0指標
+		Deck map[*uint8][]*uint8
+		//遊戲中各家的持牌,會同步手上的出牌,打出的牌會設成0x0 CardCover
+		deckInPlay map[uint8]*[NumOfCardsOnePlayer]uint8
 
-	//代表遊戲中一副牌,從常數集合複製過來,參:dealer.NewDeck
-	deck [NumOfCardsInDeck]*uint8
+		//代表遊戲中一副牌,從常數集合複製過來,參:dealer.NewDeck
+		deck [NumOfCardsInDeck]*uint8
 
-	//在_OnRoomJoined階段,透過 Game.userJoin 加入Users
-	___________Users    map[*RoomUser]struct{} // 進入房間者們 Key:玩家座標  value:玩家入桌順序.  一桌只限50人
-	___________ticketSN int                    //目前房間人數流水號,從1開始
+		//在_OnRoomJoined階段,透過 Game.userJoin 加入Users
+		___________Users    map[*RoomUser]struct{} // 進入房間者們 Key:玩家座標  value:玩家入桌順序.  一桌只限50人
+		___________ticketSN int                    //目前房間人數流水號,從1開始
 
-	name string // room(房間)/table(桌)/遊戲名稱
-	Id   int32  // room(房間)/table(桌)/遊戲 Id
+		name string // room(房間)/table(桌)/遊戲名稱
+		Id   int32  // room(房間)/table(桌)/遊戲 Id
 
-	// 遊戲進行中出牌數計數器,當滿52張出牌表示遊戲局結算,遊戲結束
-	countingInPlayCard uint8
-}
+		// 遊戲進行中出牌數計數器,當滿52張出牌表示遊戲局結算,遊戲結束
+		countingInPlayCard uint8
+
+		// 當前的莊家, 夢家, 首引
+		Declarer CbSeat
+		Dummy    CbSeat
+		Lead     CbSeat
+
+		// TODO 當前的王牌
+		KingSuit CbSuit
+	}
+)
 
 // CreateCBGame 建立橋牌(Contract Bridge) Game
 func CreateCBGame(pid context.Context, counter UserCounter, tableName string, tableId int32) *Game {
@@ -102,7 +115,7 @@ func (g *Game) Start() {
 
 	slog.Debug(fmt.Sprintf("Game(room:%s, roomId:%d) Start", g.name, g.Id))
 	g.roomManager.g = g
-
+	//重要: 只要Exception(panic)時看到下面這行出現,表示執行緒中出錯
 	go g.roomManager.Start() //啟動RoomManager
 }
 
@@ -184,6 +197,20 @@ func (g *Game) _(user *RoomUser) {
 	*/
 }
 
+func (g *Game) SetStartPlayInfo(declarer, dummy, firstLead, kingSuit uint8) {
+	g.KingSuit = CbSuit(kingSuit)
+	switch g.KingSuit {
+	case ZeroSuit: /*清除設定*/
+		g.Declarer = seatYet
+		g.Dummy = seatYet
+		g.Lead = seatYet
+	default: /*設定*/
+		g.Declarer = CbSeat(declarer)
+		g.Dummy = CbSeat(dummy)
+		g.Lead = CbSeat(firstLead)
+	}
+}
+
 /*
 	//移動環形,並校準座位
 	nextPlayer := g.SeatShift(currentPlayer)
@@ -204,40 +231,53 @@ func (g *Game) GamePrivateNotyBid(currentBidder *RoomUser) error {
 	next := g.SeatShift(currentBidder.Zone8)
 
 	complete, needReBid := g.engine.IsBidFinishedOrReBid()
-	switch complete {
 
+	var payload = payloadData{PayloadType: ProtobufType}
+
+	switch complete {
 	case false: //仍在競叫中
 		//第一個參數: 表示下一個開叫牌者 前端(Player,觀眾席)必須處理
 		//第二個參數: 禁叫品項,因為是首叫所以禁止叫品是 重要 zeroBid 前端(Player,觀眾席)必須處理
 		//第三個參數: 上一個叫牌者
 		//第四個參數: 上一次叫品
 
-		payload := cb.NotyBid{
-			Bidder:     uint32(next),
-			BidStart:   uint32(nextLimitBidding),
-			LastBidder: fmt.Sprintf("%s-%s", CbSeat(currentBidder.Zone8), currentBidder.Name),
-			LastBid:    fmt.Sprintf("%s", CbBid(currentBidder.Bid8)),
-			Double1:    uint32(db1.value),
-			Double2:    uint32(db2.value),
-			Btn:        0,
+		notyBid := cb.NotyBid{
+			Bidder:         uint32(next),
+			BidStart:       uint32(nextLimitBidding),
+			LastBidder:     uint32(currentBidder.Zone8),
+			LastBidderName: fmt.Sprintf("%s-%s", CbSeat(currentBidder.Zone8), currentBidder.Name),
+			LastBid:        fmt.Sprintf("%s", CbBid(currentBidder.Bid8)),
+			Double1:        uint32(db1.value),
+			Double2:        uint32(db2.value),
+			Btn:            0,
 		}
 
 		switch true {
 		case db1.isOn:
-			payload.Btn = cb.NotyBid_db
+			notyBid.Btn = cb.NotyBid_db
 		case db2.isOn:
-			payload.Btn = cb.NotyBid_dbx2
+			notyBid.Btn = cb.NotyBid_dbx2
 		default:
-			payload.Btn = cb.NotyBid_disable_all
+			notyBid.Btn = cb.NotyBid_disable_all
 		}
 
-		g.roomManager.SendPayloadToPlayers(ClnRoomEvents.GamePrivateNotyBid, payloadData{
-			ProtoData:   &payload,
-			PayloadType: ProtobufType,
-		})
+		payload.ProtoData = &notyBid
+
+		/*TODO 修改:
+		1)送出Public (GameNotyBid)
+		2)送出Private (GamePrivateNotyBid)..................................................
+		 memo TODO 當出現有人斷線
+		   要廣播清空桌面資訊,並告知有人斷線
+
+		 TODO: 另一種狀況是,玩家離開遊戲桌,也必須告知前端有人離桌,並清空桌面,
+		*/
+		g.roomManager.SendPayloadToPlayers(ClnRoomEvents.GameNotyBid, payload, pb.SceneType_game) //廣播Public
+		time.Sleep(time.Millisecond * 400)
+
+		payload.Player = next                                                        //指定傳送給 bidder 開叫
+		g.roomManager.SendPayloadToPlayer(ClnRoomEvents.GamePrivateNotyBid, payload) //私人Private
 
 	case true: //競叫完成
-		fmt.Printf("競叫完成之- needReBid: %t\n", needReBid)
 		switch needReBid {
 		case true: //重新洗牌,重新競叫
 
@@ -257,24 +297,46 @@ func (g *Game) GamePrivateNotyBid(currentBidder *RoomUser) error {
 			//重發牌
 			g.roomManager.SendDeal()
 
-			payload := cb.NotyBid{
+			/*TODO 修改:
+			1)送出Public (GameNotyBid)
+			2)送出Private (GamePrivateNotyBid)..................................................
+			*/
+
+			notyBid := cb.NotyBid{
 				Bidder:     uint32(bidder),
 				BidStart:   uint32(reBidSignal),
-				LastBidder: fmt.Sprintf("%s-%s", CbSeat(currentBidder.Zone8), currentBidder.Name),
-				LastBid:    fmt.Sprintf("%s", CbBid(currentBidder.Bid8)),
-				Double1:    uint32(db1.value),
-				Double2:    uint32(db2.value),
-				Btn:        cb.NotyBid_disable_all,
+				LastBidder: uint32(currentBidder.Zone8),
+				//LastBidderName: fmt.Sprintf("%s-%s", CbSeat(currentBidder.Zone8), currentBidder.Name),
+				//LastBid:        fmt.Sprintf("%s", CbBid(currentBidder.Bid8)),
+				Double1: uint32(db1.value),
+				Double2: uint32(db2.value),
+				Btn:     cb.NotyBid_disable_all,
 			}
+			payload.ProtoData = &notyBid
+			/*
+				g.roomManager.SendPayloadToPlayers(ClnRoomEvents.GameNotyBid, payload, BidScene) //廣播Public
+				time.Sleep(time.Millisecond * 400)
 
-			g.roomManager.SendPayloadToPlayers(ClnRoomEvents.GamePrivateNotyBid, payloadData{
-				ProtoData:   &payload,
-				PayloadType: ProtobufType,
-			})
+				payload.Player = bidder                                                      //指定傳送給 bidder 開叫
+				g.roomManager.SendPayloadToPlayer(ClnRoomEvents.GamePrivateNotyBid, payload) //私人Private
 
+			*/
+
+			if err := g.roomManager.SendPayloadToPlayers(ClnRoomEvents.GameNotyBid, payload, pb.SceneType_game); err != nil { //廣播Public
+				//TODO 清空當前該遊戲桌在Server上的狀態
+				slog.Info("GamePrivateNotyBid", utilog.Err(err))
+				g.engine.ClearBiddingState()
+				return nil
+			}
+			time.Sleep(time.Millisecond * 400)
+
+			payload.Player = bidder                                                      //指定傳送給 bidder 開叫
+			g.roomManager.SendPayloadToPlayer(ClnRoomEvents.GamePrivateNotyBid, payload) //私人Private
 		case false: //競叫完成,遊戲開始
 
 			lead, declarer, dummy, suit, finallyBidding, err := g.engine.GameStartPlayInfo()
+
+			g.SetStartPlayInfo(declarer, dummy, lead, suit)
 
 			if err != nil {
 				if errors.Is(err, ErrUnContract) {
@@ -285,6 +347,14 @@ func (g *Game) GamePrivateNotyBid(currentBidder *RoomUser) error {
 
 			g.engine.ClearBiddingState()
 
+			// 向前端發送清除Bidding UI
+			var clearScene = pb.OP{
+				Type:     pb.SceneType_game_clear_scene,
+				RealSeat: uint32(currentBidder.Zone8),
+			}
+			payload.ProtoData = &clearScene
+			g.roomManager.SendPayloadToPlayers(ClnRoomEvents.GameOP, payload, pb.SceneType_game)
+
 			//TODO 未來 工作
 			//以首引生成 RoundSuit keep
 			//g.roundSuitKeeper = NewRoundSuitKeep(leadPlayer)
@@ -292,9 +362,14 @@ func (g *Game) GamePrivateNotyBid(currentBidder *RoomUser) error {
 			//nextPlayer := g.SeatShift(leadPlayer)
 			//g.setEnginePlayer(leadPlayer, nextPlayer)
 
+			/*TODO
+			  ............................................
+			*/
+
 			//送出首引封包
 			// 封包位元依序為:首引, 莊家, 夢家, 合約王牌,王牌字串, 合約線位, 線位字串
-			contractPayload := cb.Contract{
+			firstLead := cb.Contract{
+				LastBidder:     uint32(currentBidder.Zone8),
 				Lead:           uint32(lead),
 				Declarer:       uint32(declarer),
 				Dummy:          uint32(dummy),
@@ -310,108 +385,43 @@ func (g *Game) GamePrivateNotyBid(currentBidder *RoomUser) error {
 					fmt.Sprintf("花色: %s   合約: %s   賭倍: %s ", CbSuit(suit), finallyBidding.contract, finallyBidding.dbType),
 				),
 			)
+			//廣播
+			payload.ProtoData = &firstLead
+			g.roomManager.SendPayloadToPlayers(ClnRoomEvents.GameFirstLead, payload, pb.SceneType_game)
 
-			g.roomManager.SendPayloadToPlayers(ClnRoomEvents.GameNotyFirstLead, payloadData{
-				ProtoData:   &contractPayload,
-				PayloadType: ProtobufType,
-			})
+			// 重要: g.syncPlayCard 很重要
+			//TODO: 將莊家牌組發送給夢家
+			// toDummy := g.deckInPlay[declarer][:] //取得莊家牌
+
+			/*
+					time.Sleep(time.Millisecond * 400)
+
+				//TODO 通知首引準備出牌 開啟 首引 card enable
+					payload.Player = lead                                                        //傳給首引玩家                                                      //指定傳送給 bidder 開叫
+					g.roomManager.SendPayloadToPlayer(ClnRoomEvents.GamePrivateNotyBid, payload) //私人Private
+			*/
 		}
 	}
 	return nil
 }
 
+// GamePrivateFirstLead 打出首引
 /*
-func (g *Game) GamePrivateNotyBid(currentBidder *RoomUser) error {
-	if !g.engine.IsBidValue8Valid(currentBidder.Bid8) {
-		return ErrBiddingInvalid
-	}
+	memo 回覆:
+     (0)首引打出的牌 (0.1)首引座位 (0.2) 首引打出後,首引的牌組回給首引做UI牌重整
+	 (1)廣播亮出夢家牌組 (1.1)夢家座位
+	 (2)下一位出牌者 (2.1)下一位出牌者可打出的牌, (2.2)下一位若過了指定時間(gauge),自動打出哪張牌
 
-	var (
-		isContractDone bool
-		isReBid        bool
-	)
+	如何判斷時間到要打出哪張牌
+    想法:
+		1) 先看此輪首打花色,然後在 deckInPlay尋找到第一張與首打花色一樣花色的牌,它就是接著要跟的牌
+		2) 若找不到,則從deckInPlay第一張打出
+*/
+func (g *Game) GamePrivateFirstLead(currentBidder *RoomUser) error { return nil }
 
-	switch isContractDone, isReBid = g.engine.IsLastBidOrReBid(currentBidder.Bid8); isContractDone {
-	case false:
-		//叫牌仍持續中
-		currentPlayer, bidValueLimit, db, db2, _ := g.engine.GetNextBid(currentBidder.Zone8, currentBidder.Bid8, currentBidder.Zone8|currentBidder.Bid8)
+// TODO 打出牌後ㄝ剩下的牌組要回給前端莊家,與夢家進行牌重整
 
-		//移動環形,並校準座位
-		nextPlayer := g.SeatShift(currentPlayer)
-		g.setEnginePlayer(currentPlayer, nextPlayer)
-
-		//第一個參數: 表示下一個開叫牌者 前端(Player,觀眾席)必須處理
-		//第二個參數: 禁叫品項,因為是首叫所以禁止叫品是 重要 zeroBid 前端(Player,觀眾席)必須處理
-		//第三個參數: 上一個叫牌者
-		//第四個參數: 上一次叫品
-		g.roomManager.sendBytesToPlayers(append([]uint8{}, currentPlayer, bidValueLimit, currentBidder.Zone8, currentBidder.Bid8, db, db2), ClnRoomEvents.GamePrivateNotyBid)
-		//TODO 廣播觀眾未實作
-	case true:
-		//合約底定
-		if !isReBid {
-			leadPlayer, declarer, dummy, contractSuit, rcd, err := g.engine.GameStartPlayInfo(currentBidder.Zone8)
-			if err != nil {
-				if errors.Is(err, ErrUnContract) {
-					slog.Error("GamePrivateNotyBid", slog.String("FYI", fmt.Sprintf("合約有問題,只能在合約確定才能呼叫GameStartPlayInfo,%s", utilog.Err(err))))
-					return err
-				}
-			}
-
-			g.engine.ClearBiddingState()
-
-			//TODO 未來 工作
-			//以首引生成 RoundSuit keep
-			//g.roundSuitKeeper = NewRoundSuitKeep(leadPlayer)
-
-			nextPlayer := g.SeatShift(leadPlayer)
-			g.setEnginePlayer(leadPlayer, nextPlayer)
-
-			//送出首引封包
-			// 封包位元依序為:首引, 莊家, 夢家, 合約王牌,王牌字串, 合約線位, 線位字串
-			contractPayload := cb.Contract{
-				Lead:           uint32(leadPlayer),
-				Declarer:       uint32(declarer),
-				Dummy:          uint32(dummy),
-				Suit:           uint32(contractSuit),
-				Contract:       uint32(rcd.contract),
-				SuitString:     fmt.Sprintf("%s", CbSuit(contractSuit)),
-				ContractString: fmt.Sprintf("%s", rcd.contract),
-				DoubleString:   fmt.Sprintf("%s", rcd.dbType),
-			}
-
-			g.roomManager.SendPayloadsToPlayers(ClnRoomEvents.GameNotyFirstLead, payloadData{
-				ProtoData:   &contractPayload,
-				PayloadType: ProtobufType,
-			})
-
-			//TODO 廣播觀眾未實作
-
-		} else {
-
-			//送出第一次中發牌封包,前端 清空,重新設定BidTable
-			g.roomManager.sendBytesToPlayers(append([]uint8{}, valueNotSet, valueNotSet, valueNotSet, valueNotSet),
-				ClnRoomEvents.GamePrivateNotyBid)
-
-			//清除叫牌紀錄
-			g.engine.ClearBiddingState()
-
-			//現出另三家的底牌,三秒後在重新發新牌
-			g.roomManager.SendPlayersHandDeal()
-			time.Sleep(time.Second * 3)
-
-			// StartOpenBid會更換新一局,因此玩家順序也做了更動
-			bidder, zero := g.start()
-
-			g.roomManager.SendDeal()
-
-			g.roomManager.sendBytesToPlayers(append([]uint8{}, bidder, zero, valueNotSet, valueNotSet),
-				ClnRoomEvents.GamePrivateNotyBid)
-
-		}
-	}
-	return nil
-} */
-
+//
 /* ======================================================================================== */
 
 // DevelopPrivatePayloadTest 測試與前端封包通訊用

@@ -20,6 +20,7 @@ type (
 		NumOfRooms       string `json:"numOfRooms,omitempty"`       //大廳房間
 		NumOfUsersInRoom string `json:"numOfUsersInRoom,omitempty"` //某特定房間人數
 		NumOfUsersOnSite string `json:"numOfUsersOnSite,omitempty"` //包含大廳人數,與所有房間人數
+		ClearScene       string `json:"clearScene,omitempty"`       //Done
 	}
 
 	// 屬性名稱是PrivateXxxx表示是通知個人私人訊號否則是大眾廣播訊號
@@ -45,6 +46,9 @@ type (
 		GamePrivateNotyBid string `json:"gamePrivateNotyBid,omitempty"` //Done (私人)
 		GameNotyBid        string `json:"gameNotyBid,omitempty"`        //Done (廣播)
 
+		GameOP           string `json:"gameOP,omitempty"`
+		GameAlertMessage string `json:"gameAlertMessage,omitempty"`
+
 		DevelopPrivatePayloadTest string `json:"developPrivatePayloadTest,omitempty"` //Done (私人)
 		DevelopPayloadTest        string `json:"developPayloadTest,omitempty"`        //Done (廣播)
 
@@ -53,26 +57,28 @@ type (
 		NamespaceCommon string `json:"namespaceCommon,omitempty"`
 		//私人訊息:玩家座位
 		GamePrivateOnSeat string `json:"gamePrivateOnSeat,omitempty"`
+
 		//競叫起叫(起叫)是一個特殊事件,前端必須特別處理,其他競叫就是一般作法 (clientEvent only)
-		GameOpenBidStart string `json:"gameOpenBidStart,omitempty"`
+		//GameOpenBidStart string `json:"gameOpenBidStart,omitempty"`
 		//競叫中
-		GameBid             string `json:"gameBid,omitempty"`
-		GamePlay            string `json:"gamePlay,omitempty"`
-		GameRoleStore       string `json:"gameRoleStore,omitempty"`
-		GameCardsConstraint string `json:"gameCardsConstraint,omitempty"`
+		//GameBid             string `json:"gameBid,omitempty"`
+		//GamePlay            string `json:"gamePlay,omitempty"`
+		//GameRoleStore       string `json:"gameRoleStore,omitempty"`
+		//GameCardsConstraint string `json:"gameCardsConstraint,omitempty"`
 
 		//通知
-		GameNotyFirstLead      string `json:"gameNotyFirstLead,omitempty"`
-		GameNotyGameReshuffle  string `json:"gameNotyGameReshuffle,omitempty"`
-		GameNotyDummy          string `json:"gameNotyDummy,omitempty"`
-		GameNotyResult         string `json:"gameNotyResult,omitempty"`
-		GameNotyNext           string `json:"gameNotyNext,omitempty"`
-		GameNotyAutoPlay       string `json:"gameNotyAutoPlay,omitempty"`
-		GameNotyCardRefresh    string `json:"gameNotyCardRefresh,omitempty"`
-		GameNotyClearGameTable string `json:"gameNotyClearGameTable,omitempty"`
+		GameFirstLead        string `json:"gameFirstLead,omitempty"`
+		GamePrivateFirstLead string `json:"gamePrivateFirstLead,omitempty"`
+		//GameNotyGameReshuffle  string `json:"gameNotyGameReshuffle,omitempty"`
+		//GameNotyDummy          string `json:"gameNotyDummy,omitempty"`
+		//GameNotyResult         string `json:"gameNotyResult,omitempty"`
+		//GameNotyNext           string `json:"gameNotyNext,omitempty"`
+		//GameNotyAutoPlay       string `json:"gameNotyAutoPlay,omitempty"`
+		//GameNotyCardRefresh    string `json:"gameNotyCardRefresh,omitempty"`
+		//GameNotyClearGameTable string `json:"gameNotyClearGameTable,omitempty"`
 
 		//首引後,莊家牌顯示給夢家看
-		GameNotyShowDeclarerHand string `json:"gameNotyShowDeclarerHand,omitempty"`
+		//GameNotyShowDeclarerHand string `json:"gameNotyShowDeclarerHand,omitempty"`
 
 		// 四家競叫流局,重新發牌前,顯示另外三家手上的按牌
 		GamePlayersHandDeal string `json:"sendPlayersHandDeal,omitempty"` //Done (廣播)
@@ -99,6 +105,7 @@ var (
 		NumOfRooms:       "cnor", // d.numOfRooms
 		NumOfUsersInRoom: "cnouir",
 		NumOfUsersOnSite: "cnouos",
+		ClearScene:       "cs",
 	}
 
 	lobbySpaceEvents = map[ServerClientEnum]*lobbyNamespace{
@@ -148,24 +155,30 @@ var (
 		DevelopPrivatePayloadTest: "dppt", //Done
 		DevelopBroadcastTest:      "dbt",
 
-		GamePrivateOnSeat:        "game.start.seat",
-		GameOpenBidStart:         "game.start.contract",
-		GameBid:                  "game.contract",
-		GamePlay:                 "game.play",
-		GameRoleStore:            "game.role",
-		GameNotyFirstLead:        "game.noty.lead",
-		GameNotyGameReshuffle:    "game.noty.reshuffle",
-		GameNotyDummy:            "game.noty.dummy",
-		GameNotyResult:           "game.noty.result",
-		GameNotyNext:             "game.noty.next",
-		GameNotyAutoPlay:         "game.noty.autoplay",
-		GameNotyCardRefresh:      "game.noty.card.refresh",
-		GameCardsConstraint:      "game.constraint.cards",
-		GameNotyShowDeclarerHand: "game.noty.declarer",
-		GameNotyClearGameTable:   "game.noty.cln.table",
-		ErrorSpace:               "e.space", //Done
-		ErrorRoom:                "e.room",  //Done
-		ErrorGame:                "e.game",  //Done
+		GamePrivateOnSeat:    "game.start.seat",
+		GameFirstLead:        "gfl",
+		GamePrivateFirstLead: "gpfl",
+
+		GameOP:           "gop",
+		GameAlertMessage: "gam",
+
+		//GameOpenBidStart:         "game.start.contract",
+		//GameBid:                  "game.contract",
+		//GamePlay:                 "game.play",
+		//GameRoleStore:            "game.role",
+
+		//GameNotyGameReshuffle:    "game.noty.reshuffle",
+		//GameNotyDummy:            "game.noty.dummy",
+		//GameNotyResult:           "game.noty.result",
+		//GameNotyNext:             "game.noty.next",
+		//GameNotyAutoPlay:         "game.noty.autoplay",
+		//GameNotyCardRefresh:      "game.noty.card.refresh",
+		//GameCardsConstraint:      "game.constraint.cards",
+		//GameNotyShowDeclarerHand: "game.noty.declarer",
+		//GameNotyClearGameTable:   "game.noty.cln.table",
+		ErrorSpace: "e.space", //Done
+		ErrorRoom:  "e.room",  //Done
+		ErrorGame:  "e.game",  //Done
 	}
 
 	// Game 命名空間
