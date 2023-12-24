@@ -362,8 +362,8 @@ func (g *Game) GamePrivateNotyBid(currentBidder *RoomUser) error {
 			//nextPlayer := g.SeatShift(leadPlayer)
 			//g.setEnginePlayer(leadPlayer, nextPlayer)
 
-			/*TODO
-			  ............................................
+			/* memo
+			   ............................................
 			*/
 
 			//送出首引封包
@@ -392,14 +392,21 @@ func (g *Game) GamePrivateNotyBid(currentBidder *RoomUser) error {
 			// 重要: g.syncPlayCard 很重要
 			//TODO: 將莊家牌組發送給夢家
 			// toDummy := g.deckInPlay[declarer][:] //取得莊家牌
+			payload.ProtoData = &cb.PlayersCards{
+				Seat: uint32(declarer), /*亮莊家牌*/
+				Data: map[uint32][]uint8{
+					uint32(dummy): g.deckInPlay[declarer][:], /*向夢家亮莊家牌*/
+				},
+			}
+			//向夢家亮莊家的牌
+			payload.Player = dummy
+			g.roomManager.SendPayloadToPlayer(ClnRoomEvents.GamePrivateShowHandToSeat /*向夢家亮莊家的牌*/, payload) //私人Private
 
-			/*
-					time.Sleep(time.Millisecond * 400)
-
-				//TODO 通知首引準備出牌 開啟 首引 card enable
-					payload.Player = lead                                                        //傳給首引玩家                                                      //指定傳送給 bidder 開叫
-					g.roomManager.SendPayloadToPlayer(ClnRoomEvents.GamePrivateNotyBid, payload) //私人Private
-			*/
+			time.Sleep(time.Millisecond * 400)
+			//TODO 通知首引準備出牌 開啟 首引 card enable
+			payload.Player = lead //傳給首引玩家                                                      //指定傳送給 bidder 開叫
+			payload.ProtoData = &firstLead
+			g.roomManager.SendPayloadToPlayer(ClnRoomEvents.GamePrivateFirstLead, payload) //私人Private
 		}
 	}
 	return nil

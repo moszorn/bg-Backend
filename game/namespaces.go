@@ -66,9 +66,11 @@ type (
 		//GameRoleStore       string `json:"gameRoleStore,omitempty"`
 		//GameCardsConstraint string `json:"gameCardsConstraint,omitempty"`
 
-		//通知
 		GameFirstLead        string `json:"gameFirstLead,omitempty"`
 		GamePrivateFirstLead string `json:"gamePrivateFirstLead,omitempty"`
+
+		//向三個座位亮出夢家,或向夢家亮出莊家的牌
+		GamePrivateShowHandToSeat string `json:"gamePrivateShowHandToSeat,omitempty"`
 		//GameNotyGameReshuffle  string `json:"gameNotyGameReshuffle,omitempty"`
 		//GameNotyDummy          string `json:"gameNotyDummy,omitempty"`
 		//GameNotyResult         string `json:"gameNotyResult,omitempty"`
@@ -155,9 +157,10 @@ var (
 		DevelopPrivatePayloadTest: "dppt", //Done
 		DevelopBroadcastTest:      "dbt",
 
-		GamePrivateOnSeat:    "game.start.seat",
-		GameFirstLead:        "gfl",
-		GamePrivateFirstLead: "gpfl",
+		GamePrivateOnSeat:         "game.start.seat",
+		GameFirstLead:             "gfl",
+		GamePrivateFirstLead:      "gpfl",
+		GamePrivateShowHandToSeat: "gpsh",
 
 		GameOP:           "gop",
 		GameAlertMessage: "gam",
