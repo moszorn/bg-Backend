@@ -68,6 +68,7 @@ type (
 
 		GameFirstLead        string `json:"gameFirstLead,omitempty"`
 		GamePrivateFirstLead string `json:"gamePrivateFirstLead,omitempty"`
+		GameCardAction       string `json:"gameCardAction,omitempty"`
 
 		//向三個座位亮出夢家,或向夢家亮出莊家的牌
 		GamePrivateShowHandToSeat string `json:"gamePrivateShowHandToSeat,omitempty"`
@@ -161,6 +162,7 @@ var (
 		GameFirstLead:             "gfl",
 		GamePrivateFirstLead:      "gpfl",
 		GamePrivateShowHandToSeat: "gpsh",
+		GameCardAction:            "gca",
 
 		GameOP:           "gop",
 		GameAlertMessage: "gam",

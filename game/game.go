@@ -407,6 +407,40 @@ func (g *Game) GamePrivateNotyBid(currentBidder *RoomUser) error {
 			payload.Player = lead //傳給首引玩家                                                      //指定傳送給 bidder 開叫
 			payload.ProtoData = &firstLead
 			g.roomManager.SendPayloadToPlayer(ClnRoomEvents.GamePrivateFirstLead, payload) //私人Private
+
+			//memo 測試對前端Card Hover -----------------------------------------------------
+			fmt.Println(" 進入 memo 5秒前")
+			time.Sleep(time.Second * 1)
+			declarerCards := g.deckInPlay[declarer][:]
+			cardIdx := 4
+			cardValue := declarerCards[4]
+			cardAction := &cb.CardAction{
+				Type:        cb.CardAction_hover,
+				CardIndex:   uint32(cardIdx),
+				CardValue:   uint32(cardValue),
+				Seat:        uint32(declarer),
+				CardString:  fmt.Sprintf("%s", CbCard(cardValue)),
+				IsCardCover: false,
+			}
+			fmt.Println(" 進入 memo 5秒後")
+			payload.Player = dummy //傳給Dummy玩家
+			payload.ProtoData = cardAction
+			fmt.Printf("cardIdx:%d cardValue:%s card hover on %s\n",
+				cardIdx,
+				CbCard(cardValue),
+				CbSeat(dummy))
+
+			g.roomManager.SendPayloadToPlayer(ClnRoomEvents.GameCardAction, payload) //私人Private
+
+			time.Sleep(time.Millisecond * 600)
+			cardAction.Type = cb.CardAction_out
+			g.roomManager.SendPayloadToPlayer(ClnRoomEvents.GameCardAction, payload) //私人Private
+
+			time.Sleep(time.Second * 1)
+			cardAction.Type = cb.CardAction_play
+			cardAction.IsCardCover = false
+			g.roomManager.SendPayloadToPlayer(ClnRoomEvents.GameCardAction, payload) //私人Private
+
 		}
 	}
 	return nil
