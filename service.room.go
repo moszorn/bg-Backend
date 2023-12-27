@@ -80,6 +80,7 @@ func (rooms AllRoom) enterProcess(ns *skf.NSConn, m skf.Message) (g *game.Game, 
 		Zone8:       uint8(PB.Zone), /*使用Zone8是因為可方便取用 */
 		Bid8:        uint8(PB.Bid),
 		Play8:       uint8(PB.Play),
+		PlaySeat8:   uint8(PB.PlaySeat),
 	}
 
 	g, err = rooms.room(m.Room)
@@ -161,11 +162,62 @@ func (rooms AllRoom) GamePrivateNotyBid(ns *skf.NSConn, m skf.Message) error {
 		return er
 	}
 	//g.PlayerLeave(u)
-	slog.Info("入口",
+	slog.Info("入口(GamePrivateNotyBid)",
 		slog.String("FYI",
 			fmt.Sprintf("叫者:%s(%s),遊戲中:%t 叫品:(%d)%s", u.Name, game.CbSeat(u.Zone8), u.IsSitting, u.Bid, game.CbBid(u.Bid))))
 
-	return g.GamePrivateNotyBid(u)
+	go g.GamePrivateNotyBid(u)
+	return nil
+}
+
+func (rooms AllRoom) GamePrivateCardPlayClick(ns *skf.NSConn, m skf.Message) error {
+	g, u, er := rooms.enterProcess(ns, m)
+	if er != nil {
+		var err *BackendErr
+		if errors.As(er, &err) {
+			slog.Error("房間錯誤", slog.String("msg", err.Error()), slog.String("room", m.Room), slog.String("zone", fmt.Sprintf("%s", game.CbSeat(u.Zone8))))
+		}
+		return er
+	}
+	//g.PlayerLeave(u)
+	slog.Info("入口(GameCardPlayClick)",
+		slog.String("FYI",
+			fmt.Sprintf("叫者:%s(%s),遊戲中:%t 叫品:(%d)%s", u.Name, game.CbSeat(u.Zone8), u.IsSitting, u.Bid, game.CbBid(u.Bid))))
+
+	go g.GamePrivateCardPlayClick(u)
+	return nil
+}
+
+func (rooms AllRoom) GamePrivateCardHover(ns *skf.NSConn, m skf.Message) error {
+
+	var (
+		err error
+		g   *game.Game
+	)
+	//取出 pb.CardAction
+	defer func() {
+		if e := recover(); e != nil {
+			slog.Error("proto嚴重錯誤(hover/hover out)", utilog.Err(e.(error)))
+		}
+	}()
+
+	cardAction := &cb.CardAction{}
+	err = pb.Unmarshal(m.Body, cardAction)
+	if err != nil {
+		panic(err)
+	}
+
+	g, err = rooms.room(m.Room)
+	if err != nil {
+		var be *BackendErr
+		if errors.As(err, &be) {
+			slog.Error("房間錯誤", utilog.Err(err))
+		}
+	}
+
+	go g.GamePrivateCardHover(cardAction)
+
+	return nil
 }
 
 /*

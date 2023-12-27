@@ -49,19 +49,21 @@ type (
 
 	// RoomService 代表 Room Space, request的入口介面
 	RoomService interface {
-		UserJoin(ns *skf.NSConn, m skf.Message) error
-		UserLeave(ns *skf.NSConn, m skf.Message) error
-		PlayerJoin(ns *skf.NSConn, m skf.Message) error
-		PlayerLeave(ns *skf.NSConn, m skf.Message) error
+		UserJoin(*skf.NSConn, skf.Message) error
+		UserLeave(*skf.NSConn, skf.Message) error
+		PlayerJoin(*skf.NSConn, skf.Message) error
+		PlayerLeave(*skf.NSConn, skf.Message) error
 
-		GamePrivateNotyBid(ns *skf.NSConn, m skf.Message) error
+		GamePrivateNotyBid(*skf.NSConn, skf.Message) error
+		GamePrivateCardPlayClick(*skf.NSConn, skf.Message) error
+		GamePrivateCardHover(*skf.NSConn, skf.Message) error
 
-		_OnNamespaceConnected(c *skf.NSConn, m skf.Message) error
-		_OnNamespaceDisconnect(c *skf.NSConn, m skf.Message) error
-		_OnRoomJoin(c *skf.NSConn, m skf.Message) error
-		_OnRoomJoined(c *skf.NSConn, m skf.Message) error
-		_OnRoomLeave(c *skf.NSConn, m skf.Message) error
-		_OnRoomLeft(c *skf.NSConn, m skf.Message) error
+		_OnNamespaceConnected(*skf.NSConn, skf.Message) error
+		_OnNamespaceDisconnect(*skf.NSConn, skf.Message) error
+		_OnRoomJoin(*skf.NSConn, skf.Message) error
+		_OnRoomJoined(*skf.NSConn, skf.Message) error
+		_OnRoomLeave(*skf.NSConn, skf.Message) error
+		_OnRoomLeft(*skf.NSConn, skf.Message) error
 	}
 )
 
@@ -126,7 +128,9 @@ func newSpaceManager(rooms RoomService, lobby LobbyService) SpaceManager {
 		game.SrvRoomEvents.TablePrivateOnSeat:  rooms.PlayerJoin,
 		game.SrvRoomEvents.TablePrivateOnLeave: rooms.PlayerLeave,
 
-		game.SrvRoomEvents.GamePrivateNotyBid: rooms.GamePrivateNotyBid,
+		game.SrvRoomEvents.GamePrivateNotyBid:       rooms.GamePrivateNotyBid,
+		game.SrvRoomEvents.GamePrivateCardPlayClick: rooms.GamePrivateCardPlayClick,
+		game.SrvRoomEvents.GamePrivateCardHover:     rooms.GamePrivateCardHover,
 
 		//game.SrvRoomEvents.GameBid:       rooms.competitiveBidding,
 		//game.SrvRoomEvents.GamePlay:      rooms.competitivePlaying,

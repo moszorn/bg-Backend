@@ -311,7 +311,11 @@ type (
 		Zone8           uint8 // 從 PlayingUser Zone轉型過來,放在Zone8是為了方便取用
 		Bid8            uint8 //叫品
 		Play8           uint8 //出牌
-		IsClientBroken  bool  //是否不正常離線(在KickOutBrokenConnection 設定)
+
+		// PlaySeat8 出打出的牌(莊家出莊家的牌或防家出防家的牌,結果Zone8=PlaySeat8)
+		// 莊家打出夢家的牌, Zone8=(莊家), PlaySeat8=(夢家)
+		PlaySeat8      uint8
+		IsClientBroken bool //是否不正常離線(在KickOutBrokenConnection 設定)
 	}
 
 	Audiences []*RoomUser //代表非玩家的旁賽者

@@ -66,12 +66,16 @@ type (
 		//GameRoleStore       string `json:"gameRoleStore,omitempty"`
 		//GameCardsConstraint string `json:"gameCardsConstraint,omitempty"`
 
-		GameFirstLead        string `json:"gameFirstLead,omitempty"`
-		GamePrivateFirstLead string `json:"gamePrivateFirstLead,omitempty"`
-		GameCardAction       string `json:"gameCardAction,omitempty"`
+		GameFirstLead            string `json:"gameFirstLead,omitempty"`
+		GamePrivateFirstLead     string `json:"gamePrivateFirstLead,omitempty"`
+		GameCardAction           string `json:"gameCardAction,omitempty"`
+		GamePrivateCardPlayClick string `json:"gamePrivateCardPlayClick,omitempty"`
 
 		//向三個座位亮出夢家,或向夢家亮出莊家的牌
 		GamePrivateShowHandToSeat string `json:"gamePrivateShowHandToSeat,omitempty"`
+		//向夢家發送莊家的動作
+		GamePrivateCardHover string `json:"gamePrivateCardHover,omitempty"`
+
 		//GameNotyGameReshuffle  string `json:"gameNotyGameReshuffle,omitempty"`
 		//GameNotyDummy          string `json:"gameNotyDummy,omitempty"`
 		//GameNotyResult         string `json:"gameNotyResult,omitempty"`
@@ -127,7 +131,9 @@ var (
 		TablePrivateOnLeave: "tpol", //Done
 		TablePrivateOnSeat:  "tpos", //Done
 
-		GamePrivateNotyBid: "gpnb",
+		GamePrivateNotyBid:       "gpnb",
+		GamePrivateCardPlayClick: "gcpc",
+		GamePrivateCardHover:     "h",
 		//NamespaceCommon: "cb.common",
 		//GameBid:         "game.contract",
 		//GamePlay:        "game.play",
@@ -163,24 +169,11 @@ var (
 		GamePrivateFirstLead:      "gpfl",
 		GamePrivateShowHandToSeat: "gpsh",
 		GameCardAction:            "gca",
+		GamePrivateCardHover:      "h",
 
 		GameOP:           "gop",
 		GameAlertMessage: "gam",
 
-		//GameOpenBidStart:         "game.start.contract",
-		//GameBid:                  "game.contract",
-		//GamePlay:                 "game.play",
-		//GameRoleStore:            "game.role",
-
-		//GameNotyGameReshuffle:    "game.noty.reshuffle",
-		//GameNotyDummy:            "game.noty.dummy",
-		//GameNotyResult:           "game.noty.result",
-		//GameNotyNext:             "game.noty.next",
-		//GameNotyAutoPlay:         "game.noty.autoplay",
-		//GameNotyCardRefresh:      "game.noty.card.refresh",
-		//GameCardsConstraint:      "game.constraint.cards",
-		//GameNotyShowDeclarerHand: "game.noty.declarer",
-		//GameNotyClearGameTable:   "game.noty.cln.table",
 		ErrorSpace: "e.space", //Done
 		ErrorRoom:  "e.room",  //Done
 		ErrorGame:  "e.game",  //Done
