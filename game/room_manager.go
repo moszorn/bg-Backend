@@ -1545,7 +1545,10 @@ func (mr *RoomManager) SendPayloadToPlayer(eventName string, payload payloadData
 	return nil
 }
 
-// SendPayloadsToPlayers 同時對遊戲中4玩家發送訊息(payload), 坑) 注意: 每個payload都要指定player,否則發不出去 TODO這個方法有點脫累贅褲子放屁地
+// SendPayloadsToPlayers 同時對遊戲中玩家發送訊息(payload)
+// 坑) 注意: 每個payload都要指定Player(表示要發給的對象), 重要 否則發不出去
+//
+//	Example: 假如夢家的牌要亮給另三家,則payloads中會有這三家(哪三家則是透過 payload.Player指定
 func (mr *RoomManager) SendPayloadsToPlayers(eventName string, payloads ...payloadData) {
 
 	var (

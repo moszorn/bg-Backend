@@ -170,6 +170,24 @@ func (rooms AllRoom) GamePrivateNotyBid(ns *skf.NSConn, m skf.Message) error {
 	return nil
 }
 
+func (rooms AllRoom) GamePrivateFirstLead(ns *skf.NSConn, m skf.Message) error {
+	g, u, er := rooms.enterProcess(ns, m)
+	if er != nil {
+		var err *BackendErr
+		if errors.As(er, &err) {
+			slog.Error("房間錯誤", slog.String("msg", err.Error()), slog.String("room", m.Room), slog.String("zone", fmt.Sprintf("%s", game.CbSeat(u.Zone8))))
+		}
+		return er
+	}
+	//g.PlayerLeave(u)
+	slog.Info("入口(GamePrivateFirstLead)",
+		slog.String("FYI",
+			fmt.Sprintf("首引 %s(%s) 打出 %s  %s", u.Name, game.CbSeat(u.Zone8), game.CbSeat(u.PlaySeat8), game.CbCard(u.Play8))))
+
+	go g.GamePrivateFirstLead(u)
+	return nil
+}
+
 func (rooms AllRoom) GamePrivateCardPlayClick(ns *skf.NSConn, m skf.Message) error {
 	g, u, er := rooms.enterProcess(ns, m)
 	if er != nil {
@@ -182,7 +200,7 @@ func (rooms AllRoom) GamePrivateCardPlayClick(ns *skf.NSConn, m skf.Message) err
 	//g.PlayerLeave(u)
 	slog.Info("入口(GameCardPlayClick)",
 		slog.String("FYI",
-			fmt.Sprintf("叫者:%s(%s),遊戲中:%t 叫品:(%d)%s", u.Name, game.CbSeat(u.Zone8), u.IsSitting, u.Bid, game.CbBid(u.Bid))))
+			fmt.Sprintf("%s(%s) 打出 %s  %s  ", u.Name, game.CbSeat(u.Zone8), game.CbSeat(u.PlaySeat8), game.CbCard(u.Play8))))
 
 	go g.GamePrivateCardPlayClick(u)
 	return nil

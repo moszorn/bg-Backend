@@ -295,6 +295,7 @@ func (mgr *SeatManager) seatPlay(playSeat, playValue uint8) (roundCompleted bool
 	//if aa < 4 表示回合尚未完整回傳false
 	return mgr.aa >= 4
 }
+
 func (mgr *SeatManager) resetPlay() {
 	mgr.aa = 0x0
 	mgr.Do(func(i any) {

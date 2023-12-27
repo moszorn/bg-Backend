@@ -132,6 +132,7 @@ var (
 		TablePrivateOnSeat:  "tpos", //Done
 
 		GamePrivateNotyBid:       "gpnb",
+		GamePrivateFirstLead:     "gpfl",
 		GamePrivateCardPlayClick: "gcpc",
 		GamePrivateCardHover:     "h",
 		//NamespaceCommon: "cb.common",

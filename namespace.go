@@ -57,6 +57,7 @@ type (
 		GamePrivateNotyBid(*skf.NSConn, skf.Message) error
 		GamePrivateCardPlayClick(*skf.NSConn, skf.Message) error
 		GamePrivateCardHover(*skf.NSConn, skf.Message) error
+		GamePrivateFirstLead(*skf.NSConn, skf.Message) error
 
 		_OnNamespaceConnected(*skf.NSConn, skf.Message) error
 		_OnNamespaceDisconnect(*skf.NSConn, skf.Message) error
@@ -129,6 +130,7 @@ func newSpaceManager(rooms RoomService, lobby LobbyService) SpaceManager {
 		game.SrvRoomEvents.TablePrivateOnLeave: rooms.PlayerLeave,
 
 		game.SrvRoomEvents.GamePrivateNotyBid:       rooms.GamePrivateNotyBid,
+		game.SrvRoomEvents.GamePrivateFirstLead:     rooms.GamePrivateFirstLead,
 		game.SrvRoomEvents.GamePrivateCardPlayClick: rooms.GamePrivateCardPlayClick,
 		game.SrvRoomEvents.GamePrivateCardHover:     rooms.GamePrivateCardHover,
 

@@ -74,10 +74,11 @@ type (
 		// 遊戲進行中出牌數計數器,當滿52張出牌表示遊戲局結算,遊戲結束
 		countingInPlayCard uint8
 
-		// 當前的莊家, 夢家, 首引
+		// 當前的莊家, 夢家, 首引, 防家
 		Declarer CbSeat
 		Dummy    CbSeat
 		Lead     CbSeat
+		Defender CbSeat
 
 		// TODO 當前的王牌
 		KingSuit CbSuit
@@ -197,6 +198,7 @@ func (g *Game) _(user *RoomUser) {
 	*/
 }
 
+// SetStartPlayInfo 競叫合約成立時,或遊戲重新開始時設定 Game中的Declarer, Dummy, Lead, KingSuit
 func (g *Game) SetStartPlayInfo(declarer, dummy, firstLead, kingSuit uint8) {
 	g.KingSuit = CbSuit(kingSuit)
 	switch g.KingSuit {
@@ -208,6 +210,20 @@ func (g *Game) SetStartPlayInfo(declarer, dummy, firstLead, kingSuit uint8) {
 		g.Declarer = CbSeat(declarer)
 		g.Dummy = CbSeat(dummy)
 		g.Lead = CbSeat(firstLead)
+	}
+
+	//找出首引對家 (防家)
+	switch g.Lead {
+	case east:
+		g.Defender = west
+	case south:
+		g.Defender = north
+	case west:
+		g.Defender = east
+	case north:
+		g.Defender = south
+	default:
+		g.Defender = seatYet
 	}
 }
 
@@ -229,6 +245,17 @@ func (g *Game) GamePrivateNotyBid(currentBidder *RoomUser) {
 
 	//移動環形,並校準座位
 	next := g.SeatShift(currentBidder.Zone8)
+
+	/* Old
+	   //設定Engine當前玩家與下一個玩家
+
+	   	//step1. 設定位置環形
+	   	//nextPlayer := g.SeatShift(currentPlayer)
+
+	   	//設定引擎
+	   	//g.setEnginePlayer(nextPlayer)
+
+	*/
 
 	complete, needReBid := g.engine.IsBidFinishedOrReBid()
 
@@ -284,7 +311,7 @@ func (g *Game) GamePrivateNotyBid(currentBidder *RoomUser) {
 			//清除叫牌紀錄
 			g.engine.ClearBiddingState()
 
-			//現出另三家的底牌,三秒後在重新發新牌
+			//現出另三家的底牌,三秒後在重新發新牌 TODO: 改名 SendPlayersHandDeal名子很白癡
 			g.roomManager.SendPlayersHandDeal()
 			time.Sleep(time.Second * 3)
 
@@ -356,8 +383,9 @@ func (g *Game) GamePrivateNotyBid(currentBidder *RoomUser) {
 			g.roomManager.SendPayloadToPlayers(ClnRoomEvents.GameOP, payload, pb.SceneType_game)
 
 			//TODO 未來 工作
+			//todo zorn 這裡記住 RoundSuitKeep, 也是第一次紀錄RoundSuitKeep的地方
 			//以首引生成 RoundSuit keep
-			//g.roundSuitKeeper = NewRoundSuitKeep(leadPlayer)
+			g.roundSuitKeeper = NewRoundSuitKeep(lead)
 
 			//nextPlayer := g.SeatShift(leadPlayer)
 			//g.setEnginePlayer(leadPlayer, nextPlayer)
@@ -407,44 +435,6 @@ func (g *Game) GamePrivateNotyBid(currentBidder *RoomUser) {
 			payload.Player = lead //傳給首引玩家                                                      //指定傳送給 bidder 開叫
 			payload.ProtoData = &firstLead
 			g.roomManager.SendPayloadToPlayer(ClnRoomEvents.GamePrivateFirstLead, payload) //私人Private
-
-			//memo 測試對前端Card Hover -----------------------------------------------------
-			/*
-				time.Sleep(time.Second * 1)
-				// 👍 因為要讓夢家可以看到莊家的明牌,所以先取出莊家牌
-				declarerCards := g.deckInPlay[declarer][:]
-				cardIdx := 4                  //第五張牌
-				cardValue := declarerCards[4] //牌值
-				cardAction := &cb.CardAction{
-					Type:        cb.CardAction_hover,
-					CardIndex:   uint32(cardIdx),
-					CardValue:   uint32(cardValue),
-					Seat:        uint32(declarer),
-					CardString:  fmt.Sprintf("%s", CbCard(cardValue)),
-					IsCardCover: false,
-				}
-				//👍 這個莊家明牌訊息只對夢家送出
-				payload.Player = dummy //傳給Dummy玩家
-				payload.ProtoData = cardAction
-				fmt.Printf("cardIdx:%d cardValue:%s card hover on %s\n", cardIdx, CbCard(cardValue), CbSeat(dummy))
-				g.roomManager.SendPayloadToPlayer(ClnRoomEvents.GameCardAction, payload) //私人Private
-
-				//👍 hover out
-				time.Sleep(time.Millisecond * 600)
-				cardAction.Type = cb.CardAction_out
-				g.roomManager.SendPayloadToPlayer(ClnRoomEvents.GameCardAction, payload) //私人Private
-
-				//夢家會看到莊家的第四張牌被打出
-				time.Sleep(time.Second * 1)
-				cardAction.Type = cb.CardAction_play
-
-				//👍 模擬莊家打出第四張牌後,牌的重整
-				after_play_cards := g.deckInPlay[declarer][:][:cardIdx]
-				after_play_cards = append(after_play_cards, g.deckInPlay[declarer][:][cardIdx+1:]...)
-				cardAction.IsCardCover = false
-				cardAction.AfterPlayCards = after_play_cards
-				g.roomManager.SendPayloadToPlayer(ClnRoomEvents.GameCardAction, payload) //私人Private
-			*/
 		}
 	}
 }
@@ -452,16 +442,90 @@ func (g *Game) GamePrivateNotyBid(currentBidder *RoomUser) {
 // GamePrivateFirstLead 打出首引
 /*
 	memo 回覆:
-     (0)首引打出的牌 (0.1)首引座位 (0.2) 首引打出後,首引的牌組回給首引做UI牌重整
-	 (1)廣播亮出夢家牌組 (1.1)夢家座位
-	 (2)下一位出牌者 (2.1)下一位出牌者可打出的牌, (2.2)下一位若過了指定時間(gauge),自動打出哪張牌
+     (0) 首引座位打出的牌 (0.1)首引座位 (0.2) 停止首引座位Gauge; (0.3)前端開始下一家倒數
+	 (1) 廣播亮出夢家牌組 (1.1)夢家座位
+	 (2) 通知下一位出牌者 (2.1)下一位出牌者可打出的牌, (2.2)下一位若過了指定時間(gauge),自動打出哪張牌
+	 (3) 首引座位打出後,首引座位的牌組回給首引做UI牌重整
 
-	如何判斷時間到要打出哪張牌
+	如何判斷gauge 時間終了要打出哪張牌
     想法:
 		1) 先看此輪首打花色,然後在 deckInPlay尋找到第一張與首打花色一樣花色的牌,它就是接著要跟的牌
 		2) 若找不到,則從deckInPlay第一張打出
 */
-func (g *Game) GamePrivateFirstLead(currentBidder *RoomUser) error { return nil }
+func (g *Game) GamePrivateFirstLead(leadPlayer *RoomUser) error {
+
+	if leadPlayer.Zone8 != uint8(g.Lead) {
+		slog.Warn("首引出牌", slog.String("FYI", fmt.Sprintf("首引應為%s, 但引牌方為%s", g.Lead, CbSeat(leadPlayer.Zone8))))
+		return nil //by pass
+	}
+
+	slog.Debug("首引打出", slog.String("FYI", fmt.Sprintf("首引%s 打出 %s", CbSeat(leadPlayer.Zone8), CbCard(leadPlayer.Play8))))
+
+	// memo 1)向三家亮夢家牌
+	g.roomManager.SendPayloadsToPlayers(ClnRoomEvents.GamePrivateShowHandToSeat,
+		payloadData{
+			ProtoData: &cb.PlayersCards{
+				Seat: uint32(g.Dummy), /*亮夢家牌*/
+				Data: map[uint32][]uint8{
+					uint32(g.Declarer): g.deckInPlay[uint8(g.Dummy)][:], /*向莊家亮夢家*/
+				},
+			},
+			PayloadType: ProtobufType,
+		},
+		payloadData{
+			ProtoData: &cb.PlayersCards{
+				Seat: uint32(g.Dummy), /*亮夢家牌*/
+				Data: map[uint32][]uint8{
+					uint32(g.Lead): g.deckInPlay[uint8(g.Dummy)][:], /*向首引(防家)亮夢家*/
+				},
+			},
+			PayloadType: ProtobufType,
+		},
+		payloadData{
+			ProtoData: &cb.PlayersCards{
+				Seat: uint32(g.Dummy), /*亮夢家牌*/
+				Data: map[uint32][]uint8{
+					uint32(g.Defender): g.deckInPlay[uint8(g.Dummy)][:], /*向防家亮夢家*/
+				},
+			},
+			PayloadType: ProtobufType,
+		},
+	)
+
+	// memo 0) 向四家亮出首引出的牌 CardAction
+	// memo (0)首引座位打出的牌
+	//      (0.1) 首引座位
+	//      (0.2) 停止首引座位Gauge
+	//      (0.2) 前端開始下一家倒數(gauge)
+	var (
+		nextPlayer = g.SeatShift(leadPlayer.Zone8)
+		cardAction = &cb.CardAction{
+			Type:        cb.CardAction_play,
+			CardValue:   leadPlayer.Play,
+			Seat:        leadPlayer.Zone,
+			NextSeat:    uint32(nextPlayer),
+			IsCardCover: true, /*蓋牌打出*/
+		}
+		payload = payloadData{
+			ProtoData:   cardAction,
+			PayloadType: ProtobufType,
+		}
+	)
+	g.roomManager.SendPayloadToPlayers(ClnRoomEvents.GameCardAction, payload, pb.SceneType_game)
+
+	// TODO: 尚未完成
+	// memo 2) 通知下家換誰出牌
+	//    (2)下一位出牌者 (2.1)下一位出牌者可打出的牌, (2.2)下一位若過了指定時間(gauge),自動打出哪張牌
+	//g.roomManager.SendPayloadToPlayer(ClnRoomEvents., payload) //私人Private
+
+	// memo 3) 回覆重整首引座位手持牌組 注意: 重整牌一定會要設定以下三個參數
+	cardAction.Seat = leadPlayer.Zone
+	cardAction.IsCardCover = false                                           //重要,一定要false前端才會正確
+	cardAction.AfterPlayCards = g.deckInPlay[leadPlayer.Zone8][:]            //牌重整
+	g.roomManager.SendPayloadToPlayer(ClnRoomEvents.GameCardAction, payload) //私人Private
+
+	return nil
+}
 
 // GamePrivateCardHover hoverPlayer 可能是莊家,能是夢家 ->對應前端 GameCardAction
 //
@@ -479,7 +543,7 @@ func (g *Game) GamePrivateFirstLead(currentBidder *RoomUser) error { return nil 
 //		  🥎 ) 回覆當莊家對夢家的牌發生hover out時
 //			UI) 夢家會看到夢家的那張牌 hover out
 //
-// hoverPlayer 一定是莊家(Declarer)
+// hoverPlayer 一定是莊家(Declarer) memo : 已完成
 func (g *Game) GamePrivateCardHover(cardAction *cb.CardAction) error {
 
 	if !cardAction.IsTriggerByDeclarer {
@@ -556,7 +620,7 @@ func (g *Game) GamePrivateCardPlayClick(clickPlayer *RoomUser) error {
 
 		//因為牌已經打出,所以向四家送出打出者Gauge的停止 OP
 		op = &pb.OP{
-			Type:     pb.SceneType_game_gauge_terminate,
+			Type:     pb.SceneType_game_gauge_terminate, /*memo : SceneType_game_gauge_terminate 已經廢棄*/
 			RealSeat: clickPlayer.Zone,
 		}
 	)
@@ -576,14 +640,14 @@ func (g *Game) GamePrivateCardPlayClick(clickPlayer *RoomUser) error {
 		Type:           cb.CardAction_play,
 		CardIndex:      cardIdx,
 		CardValue:      cardValue,
-		Seat:           uint32(clickPlayer.Zone8),
-		CardString:     fmt.Sprintf("%s", CbCard(cardValue)),
-		IsCardCover:    false,
+		Seat:           uint32(clickPlayer.Zone8), /*關閉Gauge,與執行該位置CardAction_play動作*/
+		NextSeat:       uint32(clickPlayer.Zone8), /*啟動下一個Gauge*/
+		IsCardCover:    false,                     /*重整牌一定要設成false*/
 		AfterPlayCards: append(g.deckInPlay[clickPlayer.Zone8][:][:cardIdx], g.deckInPlay[clickPlayer.Zone8][:][cardIdx+1:]...),
 	}
 	g.roomManager.SendPayloadToPlayer(ClnRoomEvents.GameCardAction, payload) //私人Private
 
-	//廣播四家中斷gauge
+	//廣播四家中斷gauge, memo: 使用OP停止Gauge方式已經廢棄,改用CardAction(Seat,NextSeat)
 	payload.ProtoData = op
 	g.roomManager.SendPayloadToPlayers(ClnRoomEvents.GameOP, payload, pb.SceneType_game)
 
