@@ -3,8 +3,6 @@ package game
 //go:generate stringer -type=CbSeat,CbBid,CbCard,CbSuit,Track,CbRole,SeatStatusAndGameStart --linecomment -output cb32.enum_strings.go
 
 import (
-	"bytes"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -438,24 +436,21 @@ const (
 var (
 	//常數
 	playerSeats = [4]uint8{uint8(east), uint8(south), uint8(west), uint8(north)}
-	//playerSeats = [4]uint8{east, north, west, south}
-
-	//常數
-	deck = [NumOfCardsInDeck]uint8{club2, club3, club4, club5, club6, club7, club8, club9, club10, clubJ, clubQ, clubK, clubAce, diamond2, diamond3, diamond4, diamond5, diamond6, diamond7, diamond8, diamond9, diamond10, diamondJ, diamondQ, diamondK, diamondAce, heart2, heart3, heart4, heart5, heart6, heart7, heart8, heart9, heart10, heartJ, heartQ, heartK, heartAce, spade2, spade3, spade4, spade5, spade6, spade7, spade8, spade9, spade10, spadeJ, spadeQ, spadeK, spadeAce}
 )
 
 // CardRange 區間, 限制該回合能打出牌的範圍
 type CardRange [2]uint8
 
 var (
-	// 王張區間
+
+	// CKings 王區間
 	CKings CardRange = [2]uint8{club2, clubAce}
 	DKings CardRange = [2]uint8{diamond2, diamondAce}
 	HKings CardRange = [2]uint8{heart2, heartAce}
 	SKings CardRange = [2]uint8{spade2, spadeAce}
 	NKings CardRange = [2]uint8{club2, spadeAce}
 
-	// CardRange 回合允許出牌的區間,若出牌不在區間只有墊牌與切牌兩種可能
+	// ClubRange 回合跟牌區間(允許出牌區間),若出牌不在區間只有墊牌與切牌兩種可能
 	ClubRange    = *(&CKings)
 	DiamondRange = *(&DKings)
 	HeartRange   = *(&HKings)
@@ -463,102 +458,8 @@ var (
 	TrumpRange   = *(&NKings)
 )
 
-// 從uint32取出一個uint8值(取出uint32轉[]byte的索引0(第一個byte))
-func uint32ToUint8(value uint32) uint8 {
-	values := make([]byte, 4)
-	binary.LittleEndian.PutUint32(values, value)
-	return values[0]
-}
-
-// uint32ToValue 從封包以LittleEndian將uint32轉換回有效的資料(uint8)
-// 回傳seat(CbSeat),value(CbCard,CbBid,CbSuit), orig (raw8)(從封包LittleEndian取出的原uin8資料),
-func uint32ToValue(value32 uint32) (seat, value, orig uint8) {
-	value8 := uint32ToUint8(value32)
-	return value8 & seatMark8, value8 & valueMark8, value8
-}
-
-// cards13x4ToBytes 將四家的牌兜成一個 []byte
-func cards13x4ToBytes(c1, c2, c3, c4 [13]*uint8) (protoAttr []byte) {
-	values := make([]uint8, 0, 52)
-	players := [4][13]*uint8{c1, c2, c3, c4}
-	for p := range players {
-		cards := players[p]
-		for i := 0; i < len(cards); i++ {
-			values = append(values, *cards[i])
-		}
-	}
-	buf := bytes.NewBuffer(nil)
-	err := binary.Write(buf, binary.LittleEndian, values)
-	if err != nil {
-		panic(err)
-	}
-	return buf.Bytes()
-}
-
-// 注意 坑坑: b 不能大於 128 (0x80) 不然當data overflow
-func seatToBytes(b uint8) (protoAttr []byte) {
-	values := make([]uint8, 0, 1)
-
-	values = append(values, bitRShift(b))
-	buf := bytes.NewBuffer(nil)
-
-	err := binary.Write(buf, binary.LittleEndian, values)
-
-	if err != nil {
-		panic(err)
-	}
-
-	return buf.Bytes()
-}
-
-// uint8Seat 因為socket傳輸byte最大到0X7F,所以 Seat (西0x80,北0xC0)都不能直接傳送,必須轉成0x0,0x1,0x2,0x3)
-// 注意 坑坑: b 不能大於 128 (0x80) 不然當data overflow
-func bitRShift(b uint8) uint8 {
-	var rightShift uint8
-	switch CbSeat(b) {
-	case east:
-		//0x0 (0000)
-		return b
-	case south:
-		//0x40轉回0x1 (0001)
-		fallthrough
-	case west:
-		//0x80轉回0x2 (0010)
-		fallthrough
-	case north:
-		//0xC0轉回0x3 (0011)
-		rightShift = b >> 6
-	}
-	return rightShift
-}
-
-// 注意 坑: 不可能將seat轉成單一的byte放到 []byte, 因為西(0x80->1000 0000已經overflow)
-// seatToBytes 將Seat直接轉成bytes
-/*func seatToBytes(seat8 uint8) (seat []byte) {
-	seat = make([]uint8, 4, 4)
-
-	binary.LittleEndian.PutUint32(seat, uint32(bitRShift(seat8)))
-	return
-}*/
-
-// bytesToSeat 將bytes轉回seat
-func bytesToSeat(seat []byte) uint8 {
-	return uint8(binary.LittleEndian.Uint32(seat))
-}
-
-// 將一家13張牌轉成bytes ,可以用protocol buffer 屬性
-func cardsToBytes(cardsPointers [13]*uint8) (cards []byte) {
-	cards = make([]uint8, 0, 13)
-	for i := 0; i < len(cardsPointers); i++ {
-		cards = append(cards, *cardsPointers[i])
-	}
-	return cards
-}
-
+/* 已被 GetTrumpRange取代
 func TrumpCardRange(trump uint8) CardRange {
-	//trump是遊戲最後的叫品
-
-	//從最後叫品找出該局的王是什花色(王張區間) Suit
 	switch CbSuit(seatBiddingMapperSuit[trump]) {
 	case CLUB:
 		return CKings
@@ -570,42 +471,60 @@ func TrumpCardRange(trump uint8) CardRange {
 		return SKings
 	case TRUMP:
 		return NKings
-		// 無王沒有王張區間,所以表示ㄉ52張都可以出
 	case PASS:
-		// 無王沒有王張區間
 	case DOUBLE:
 	case REDOUBLE:
 	}
 	return [2]uint8{0x0, 0x0}
+}*/
+
+// GetTrumpRange 合約底定後,以合約Suit獲取遊戲王牌範圍 (取代 TrumpCardRange)
+func GetTrumpRange(contractSuit uint8) CardRange {
+	switch CbSuit(seatBiddingMapperSuit[contractSuit]) {
+	case CLUB:
+		return CKings
+	case DIAMOND:
+		return DKings
+	case HEART:
+		return HKings
+	case SPADE:
+		return SKings
+	case TRUMP:
+		return NKings
+	default: /*PASS, DOUBLE, REDOUBLE*/
+		//這裡應該永遠都不可能執行到
+		zeroSuit := uint8(ZeroSuit)
+		return [2]uint8{zeroSuit, zeroSuit}
+	}
 }
 
-// PlayCardRange 回合允許出牌的區間,該回合首打決定所要出牌的花色與區間
-func PlayCardRange(firstHand uint8) CardRange {
+// GetRoundRangeByFirstPlay 回合允許出牌的區間,該回合首打(firstPlay)決定所要出牌的花色與區間
+func GetRoundRangeByFirstPlay(firstPlay uint8) CardRange {
 
 	//模擬四家的出牌
 	// first首打
-	var first = CbCard(firstHand)
-	fmt.Printf("%08b %[1]d ", first)
+	var first = CbCard(firstPlay)
+	fmt.Printf("first Play: %08b %[1]d ", first)
 
 	switch {
 	case first < Diamond2:
-		fmt.Printf("Club[%08b ~ %08b]\n", Club2, ClubAce)
+		fmt.Printf("hit range: Club[%08b ~ %08b]\n", Club2, ClubAce)
 		return ClubRange
 	case ClubAce < first && first < Heart2:
-		fmt.Printf("Diamond[%08b ~ %08b]\n", Diamond2, DiamondAce)
+		fmt.Printf("hit range: Diamond[%08b ~ %08b]\n", Diamond2, DiamondAce)
 		return DiamondRange
 	case DiamondAce < first && first < Spade2:
-		fmt.Printf("Heart[%08b ~ %08b]\n", Heart2, HeartAce)
+		fmt.Printf("hit range: Heart[%08b ~ %08b]\n", Heart2, HeartAce)
 		return HeartRange
 	case HeartAce < first && first <= SpadeAce:
-		fmt.Printf("Spade[%08b ~ %08b]\n", Spade2, SpadeAce)
+		fmt.Printf("hit range: Spade[%08b ~ %08b]\n", Spade2, SpadeAce)
 		return SpadeRange
 	default:
 	}
-	return [2]uint8{0x0, 0x0}
+	return [2]uint8{club2, spadeAce}
 }
 
-// RoundSuitKeep 紀錄該回合能出的牌範圍, 本局贏家將ReNewKeeper,直到client送來該玩家打出的牌 DoKeep,所有玩家可出的牌被限定於RoundSuitKeep
+// RoundSuitKeep 紀錄該回合能出的牌範圍, 本局贏家執行ReNewKeeper,直到client送來該玩家打出的牌 DoKeep,所有玩家可出的牌被限定於RoundSuitKeep
 type RoundSuitKeep struct {
 	Player    uint8     //keep 持續等待該玩家下一次出牌
 	CardRange CardRange //當該玩家(Player)出牌時,依照所出的牌(Suit)找出可出牌最大最小範圍
@@ -614,11 +533,11 @@ type RoundSuitKeep struct {
 	IsSet     bool      //是否已經設定要keep的seat
 }
 
-// NewRoundSuitKeep 只能以首引生成
-func NewRoundSuitKeep(firstLead uint8) *RoundSuitKeep {
+// NewRoundSuitKeep 每個可出牌回合的第一個Play執行
+func NewRoundSuitKeep(firstPlay uint8) *RoundSuitKeep {
 	return &RoundSuitKeep{
-		Player:    firstLead,
-		CardRange: CardRange{},
+		Player:    firstPlay,
+		CardRange: [2]uint8{club2, spadeAce},
 		IsSet:     true,
 		Min:       0,
 		Max:       0,
@@ -647,7 +566,7 @@ func (r *RoundSuitKeep) DoKeep(seat, card uint8) error {
 		return nil
 	}
 
-	r.CardRange = PlayCardRange(card)
+	r.CardRange = GetRoundRangeByFirstPlay(card)
 	r.Min = r.CardRange[0]
 	r.Max = r.CardRange[1]
 	return nil
@@ -657,8 +576,8 @@ func (r *RoundSuitKeep) DoKeep(seat, card uint8) error {
 func (r *RoundSuitKeep) ReNewKeeper(seat uint8) {
 	r.Player = seat
 	r.IsSet = true
-	r.Min = uint8(club2)
-	r.Max = uint8(spadeAce)
+	r.Min = club2
+	r.Max = spadeAce
 }
 
 // AllowCardsByRoundSuitKeep cards玩家當前手上持牌(cards),allows 玩家下次可出的牌(allows)
@@ -670,28 +589,28 @@ func (r *RoundSuitKeep) ReNewKeeper(seat uint8) {
 func (r *RoundSuitKeep) AllowCardsByRoundSuitKeep(cards *[13]uint8) []uint8 {
 	//找出未標示 game.BaseCover表示玩家尚未出過牌
 
-	//followSuit以首打為依據
-	followSuits := make([]uint8, 0, 13)
-	//unfollowSuit不以首打為依據
-	unfollowSuits := make([]uint8, 0, 13)
+	//符合回合首打花色
+	normalSuits := make([]uint8, 0, 13)
+	//不符合首打花色
+	abnormalSuits := make([]uint8, 0, 13)
 
 	for i := range cards {
 		if cards[i] == uint8(BaseCover) {
 			continue
 		}
 		if r.Min <= cards[i] && r.Max >= cards[i] {
-			followSuits = append(followSuits, cards[i])
+			normalSuits = append(normalSuits, cards[i])
 		}
-		unfollowSuits = append(unfollowSuits, cards[i])
+		abnormalSuits = append(abnormalSuits, cards[i])
 	}
-	if len(followSuits) != 0 {
-		return followSuits
+	if len(normalSuits) != 0 {
+		return normalSuits
 	}
-	return unfollowSuits
+	return abnormalSuits
 }
 
 //gamengine.trumpRange
-// PlayCardRange(firstHand uint8) CardRange
+// GetRoundRangeByFirstPlay(firstHand uint8) CardRange
 /*
 	switch game.CbSuit(c.trumpSuit) {
 	case game.TRUMP:

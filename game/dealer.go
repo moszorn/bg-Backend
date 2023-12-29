@@ -13,9 +13,9 @@ const (
 	NumOfCardsInDeck int = 52
 	// NumOfCardsOnePlayer 一局遊戲每位玩家最多持牌
 	NumOfCardsOnePlayer int = 13
-
-	FirstLeadSignal uint8 = 0
 )
+
+var deck = [NumOfCardsInDeck]uint8{club2, club3, club4, club5, club6, club7, club8, club9, club10, clubJ, clubQ, clubK, clubAce, diamond2, diamond3, diamond4, diamond5, diamond6, diamond7, diamond8, diamond9, diamond10, diamondJ, diamondQ, diamondK, diamondAce, heart2, heart3, heart4, heart5, heart6, heart7, heart8, heart9, heart10, heartJ, heartQ, heartK, heartAce, spade2, spade3, spade4, spade5, spade6, spade7, spade8, spade9, spade10, spadeJ, spadeQ, spadeK, spadeAce}
 
 // 發牌前排序玩家手(hand)的牌
 func sortHand(hand []*uint8) {

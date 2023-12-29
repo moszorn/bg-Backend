@@ -27,15 +27,12 @@ type Engine struct {
 
 	bidHistory *bidHistory
 
-	//王張區間, 在計算首引(getGameFirstLead)時計算出王張區間,代表本局合法的王牌有哪幾張
-	trumpRange CardRange
+	//底下三個在競叫底定,遊戲開始前 SetGamePlayInfo 設定
+	trumpRange CardRange //王張區間,首引
+	declarer   CbSeat    //本局莊家,計算GameResult會用到
+	dummy      CbSeat    //本局夢家,計算GameResult會用到
+	//.................................................
 
-	//本局莊家,計算GameResult會用到
-	declarer CbSeat
-	//本局夢家,計算GameResult會用到
-	dummy CbSeat
-
-	//.................................................)
 	//表示當前叫牌玩家,或出牌玩家座位
 	currentPlay uint8
 }
@@ -73,7 +70,7 @@ func (egn *Engine) ClearBiddingState() {
 	slog.Debug("ClearBiddingState", slog.Bool("清空還原競叫狀態", true))
 
 	//坑: 清空trumpSuit該在叫牌前執行
-	//egn.trumpSuit = valueNotSet
+	//egn.trumpRange = [2]uint8{club2,spadeAc}
 }
 
 // GameStartPlayInfo 競叫結束,以最後叫pass的玩家座位(lastPassSeat)為參數取得 leasSeat首引, declarerSeat莊家, dummySeat夢家, contractSuit王牌花, contract 合約紀錄(包含是否db,叫品線位)
@@ -173,7 +170,7 @@ func (egn *Engine) playResultInTrump(eastCard, southCard, westCard, northCard ui
 	/*	var (
 			first, flowers = egn.playOrder(eastCard, southCard, westCard, northCard)
 			loses          []uint8
-			playRange = PlayCardRange(first)
+			playRange = GetRoundRangeByFirstPlay(first)
 		)
 
 		win := first
@@ -242,7 +239,7 @@ func (egn *Engine) playResultInSuit(eastCard, southCard, westCard, northCard uin
 			//若都沒人出王牌
 			var (
 				first, flowers = egn.playOrder(eastCard, southCard, westCard, northCard)
-				playRange      = PlayCardRange(first)
+				playRange      = GetRoundRangeByFirstPlay(first)
 			)
 
 			//先令win 為首打,在與他牌進行比較

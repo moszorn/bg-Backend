@@ -169,6 +169,7 @@ var (
 		GameFirstLead:             "gfl",
 		GamePrivateFirstLead:      "gpfl",
 		GamePrivateShowHandToSeat: "gpsh",
+		GamePrivateCardPlayClick:  "gcpc",
 		GameCardAction:            "gca",
 		GamePrivateCardHover:      "h",
 

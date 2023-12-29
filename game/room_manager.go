@@ -1524,6 +1524,71 @@ func (mr *RoomManager) SendPayloadToPlayers(eventName string, payload payloadDat
 	return nil
 }
 
+//--------------------------------------------------------------------
+
+// SendPayloadToOneAndPayloadToOthers
+// 送出 commonPayload  給三個指定玩家,送出 specialPayload 給指定玩家(specialSeat)
+// 例如: 對西,北,南送出蓋牌出牌, 但東要送出明牌出牌 (用於玩家出牌)
+func (mr *RoomManager) SendPayloadToOneAndPayloadToOthers(
+	eventName string, commonPayload, specialPayload payloadData, specialSeat uint8) {
+
+	var (
+		err          error
+		errFmtString = "%s玩家連線中斷"
+		//三家connection
+		connections = make(map[uint8]*skf.NSConn)
+		e, s, w, n  = uint8(east), uint8(south), uint8(west), uint8(north)
+	)
+
+	connections[e], connections[s], connections[w], connections[n] = mr.AcquirePlayerConnections()
+
+	if connections[e] == nil {
+		err = fmt.Errorf(errFmtString, "east")
+	}
+	if connections[s] == nil {
+		err = fmt.Errorf(errFmtString, "north")
+	}
+	if connections[w] == nil {
+		err = fmt.Errorf(errFmtString, "west")
+	}
+	if connections[n] == nil {
+		err = fmt.Errorf(errFmtString, "north")
+	}
+
+	if err != nil {
+		slog.Error("連線中斷(SendPayloadToOneAndPayloadToOthers)", utilog.Err(err))
+		//TODO 對未斷線玩家,送出現在狀況,好讓前端popup
+		for _, nsConn := range connections {
+			if nsConn != nil {
+				nsConn.EmitBinary("popup-warning", []byte(err.Error()))
+			}
+		}
+
+	} else {
+		for seat, con := range connections {
+			if con != nil {
+				switch seat {
+				case specialSeat:
+					//specialPayload specialSeat 送出專門針對他(specialSeat)的封包
+					err = mr.send(con, eventName, specialPayload)
+				default:
+					//commonPayload 三家送出同樣的封包
+					err = mr.send(con, eventName, commonPayload)
+				}
+			} else {
+				//TODO: 斷線處理
+				slog.Warn("payload發送失敗(SendPayloadToOneAndPayloadToOthers)", utilog.Err(errors.New(fmt.Sprintf("座位%s %s", CbSeat(seat), err))))
+			}
+		}
+
+		if err != nil {
+			slog.Warn("payload發送失敗(SendPayloadToOneAndPayloadToOthers)", utilog.Err(err))
+		}
+	}
+}
+
+//--------------------------------------------------------------------
+
 // SendPayloadToPlayer 發送訊息給payload中指定的player, 指定eventName, 訊息 payload (payload內部必須指定seat(player))
 func (mr *RoomManager) SendPayloadToPlayer(eventName string, payload payloadData /*, seat uint8*/) error {
 	//slog.Debug("SendPayloadsToPlayer", slog.String("發送", fmt.Sprintf("%s(%d)", CbSeat(payload.Player), payload.Player)))
