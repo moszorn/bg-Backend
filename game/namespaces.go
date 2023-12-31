@@ -88,7 +88,7 @@ type (
 		//GameNotyShowDeclarerHand string `json:"gameNotyShowDeclarerHand,omitempty"`
 
 		// 四家競叫流局,重新發牌前,顯示另外三家手上的按牌
-		GamePlayersHandDeal string `json:"sendPlayersHandDeal,omitempty"` //Done (廣播)
+		GameCardsShowUp string `json:"gameCardsShowUp,omitempty"` //Done (廣播)
 
 		//接收Space時發生錯誤的回覆
 		ErrorSpace string `json:"errorSpace,omitempty"` //Done
@@ -159,7 +159,7 @@ var (
 		GameNotyBid:        "gnb",     // Done
 		GamePrivateNotyBid: "gpnb",    //Done
 
-		GamePlayersHandDeal: "g3h", // Done
+		GameCardsShowUp: "g3h", // Done
 
 		DevelopPayloadTest:        "dpt",  //Done
 		DevelopPrivatePayloadTest: "dppt", //Done

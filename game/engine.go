@@ -88,6 +88,7 @@ func (egn *Engine) IsBidFinishedOrReBid() (bidComplete bool, needReBid bool) {
 	return egn.bidHistory.IsBidFinishedOrReBid()
 }
 
+// StartBid 初始競叫開始
 func (egn *Engine) StartBid() (nextBidder uint8, limitBiddingValue uint8) {
 	// 重要  叫品首開叫, 重要: 前端以zeroBid來判斷是不是首叫開始
 	//return randomSeat(), zeroBid

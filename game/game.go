@@ -11,8 +11,7 @@ import (
 	"github.com/moszorn/pb/cb"
 	utilog "github.com/moszorn/utils/log"
 	"github.com/moszorn/utils/skf"
-
-	"google.golang.org/protobuf/proto"
+	//"google.golang.org/protobuf/proto"
 	//"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -25,22 +24,6 @@ type (
 )
 
 type (
-	PayloadType uint8
-)
-
-const (
-	ByteType PayloadType = iota
-	ProtobufType
-)
-
-type (
-	payloadData struct {
-		Player      uint8         //代表player seat 通常針對指定的玩家, 表示Zone的情境應該不會發生
-		Data        []uint8       // 可以是byte, bytes
-		ProtoData   proto.Message // proto
-		PayloadType PayloadType   //這個 payload 屬於那種型態的封	包
-	}
-
 	Game struct { // 玩家進入房間, 玩家進入遊戲,玩家離開房間,玩家離開遊戲
 
 		Shutdown context.CancelFunc
@@ -74,21 +57,17 @@ type (
 		// 遊戲進行中出牌數計數器,當滿52張出牌表示遊戲局結算,遊戲結束
 		countingInPlayCard uint8
 
-		// 當前的莊家, 夢家, 首引, 防家
+		// 當前的莊家, 夢家, 首引, 防家, 競叫玩遊戲開始前SetGamePlayInfo會設定這些值
 		Declarer CbSeat
 		Dummy    CbSeat
 		Lead     CbSeat
 		Defender CbSeat
+		KingSuit CbSuit // 當前的王牌
 
-		// TODO 當前的王牌
-		KingSuit CbSuit
-
-		//每回合首打區間最大值,最小值
+		//首引產生以及每回合首打產生時會計算(SetRoundAvailableRange)該回合可出牌區間最大值,最小值
 		roundMax uint8
 		roundMin uint8
 	}
-
-	PlayerHand [13]uint8
 )
 
 // CreateCBGame 建立橋牌(Contract Bridge) Game
@@ -125,7 +104,7 @@ func (g *Game) Start() {
 
 	slog.Debug(fmt.Sprintf("Game(room:%s, roomId:%d) Start", g.name, g.Id))
 	g.roomManager.g = g
-	//重要: 只要Exception(panic)時看到下面這行出現,表示執行緒中出錯
+	//重要: 只要Exception(panic)時看到下面這行出現,表示執行中的執行緒出錯
 	go g.roomManager.Start() //啟動RoomManager
 }
 
@@ -140,35 +119,24 @@ func (g *Game) Close() {
 
 // ----------------------engine
 
-// 設定當家,結算該回合比牌時會用到
+// 設定當前輪到哪一位玩家(座位),結算該回合比牌時會用到
 func (g *Game) setEnginePlayer(player uint8) {
-	// player 設定player當前玩家, 比牌算牌時,需要知道current seat
+	// player 設定player當前玩家, 回合結束算牌時,需要知道current seat
 	g.engine.SetCurrentSeat(player)
 }
 
-// --------------------- seat
-
-// SeatShift , 座位更替,新局時呼叫
+// SeatShift 移動到下一位玩家,以當前座位取得下一位玩家座位
 func (g *Game) SeatShift(seat uint8) (nextSeat uint8) {
 	return g.roomManager.SeatShift(seat)
 }
 
-// start 開始遊戲,這個method會進行洗牌, bidder競叫者,limitBiddingValue 禁叫品
-func (g *Game) start() (currentPlayer, limitBiddingValue uint8) {
+// start 開始遊戲,這個method會進行洗牌, bidder競叫者,zeroBidding競叫初始值
+func (g *Game) start() (currentPlayer, zeroBidding uint8) {
 	//洗牌
 	Shuffle(g)
 
 	// limitBiddingValue 必定是 zeroBid ,因此 重要 前端必須判斷開叫是否是首叫狀態
-	currentPlayer, limitBiddingValue = g.engine.StartBid()
-
-	//設定Engine當前玩家與下一個玩家
-
-	//step1. 設定位置環形
-	//nextPlayer := g.SeatShift(currentPlayer)
-
-	//設定引擎
-	//g.setEnginePlayer(nextPlayer)
-
+	currentPlayer, zeroBidding = g.engine.StartBid()
 	return
 }
 
@@ -200,14 +168,11 @@ func (g *Game) UserJoinTableInfo(user *RoomUser) {
 	go g.roomManager.UserJoinTableInfo(user)
 }
 
-func (g *Game) _(user *RoomUser) {
-	/*
-		winner := g.engine.GetPlayResult()
-		go g.roomManager.broadcast(winner)
-	*/
-}
+//====================================================================================
+//====================================================================================
+//====================================================================================
 
-// SetGamePlayInfo 競叫合約成立時,或遊戲重新開始時設定 Game中的Declarer, Dummy, Lead, KingSuit
+// SetGamePlayInfo 競叫合約成立時,或遊戲重新開始時設定 Game,以及Engine中的Declarer, Dummy, Lead, KingSuit
 func (g *Game) SetGamePlayInfo(declarer, dummy, firstLead, kingSuit uint8) {
 	g.KingSuit = CbSuit(kingSuit)
 
@@ -258,21 +223,11 @@ func (g *Game) GamePrivateNotyBid(currentBidder *RoomUser) {
 
 	nextLimitBidding, db1, db2 := g.engine.GetNextBid(currentBidder.Zone8, currentBidder.Bid8)
 
+	//叫牌開始,開始設定這局Engine位置
 	g.setEnginePlayer(currentBidder.Zone8)
 
 	//移動環形,並校準座位
 	next := g.SeatShift(currentBidder.Zone8)
-
-	/* Old
-	   //設定Engine當前玩家與下一個玩家
-
-	   	//step1. 設定位置環形
-	   	//nextPlayer := g.SeatShift(currentPlayer)
-
-	   	//設定引擎
-	   	//g.setEnginePlayer(nextPlayer)
-
-	*/
 
 	complete, needReBid := g.engine.IsBidFinishedOrReBid()
 
@@ -326,17 +281,24 @@ func (g *Game) GamePrivateNotyBid(currentBidder *RoomUser) {
 		case true: //重新洗牌,重新競叫
 
 			//清除叫牌紀錄
+			// moszorn 重要: 一並清除 bidHistory
 			g.engine.ClearBiddingState()
 
-			//現出另三家的底牌,三秒後在重新發新牌 TODO: 改名 SendPlayersHandDeal名子很白癡
-			g.roomManager.SendPlayersHandDeal()
+			//四家攤牌
+			g.roomManager.SendShowPlayersCardsOut()
+
+			//三秒後重新發新牌
 			time.Sleep(time.Second * 3)
 
 			// StartOpenBid會更換新一局,因此玩家順序也做了更動
-			bidder, _ := g.start()
+			bidder, zeroBidding := g.start()
 
-			//前端重新叫訊號
-			reBidSignal := valueNotSet
+			/* TBC: 因為產生新的玩家順序,所以要新的位置設定?? 但似乎好像這裡又不需要設定
+			g.setEnginePlayer(bidder)
+
+			//移動環形,並校準座位
+			next := g.SeatShift(bidder)
+			*/
 
 			//重發牌
 			g.roomManager.SendDeal()
@@ -348,7 +310,7 @@ func (g *Game) GamePrivateNotyBid(currentBidder *RoomUser) {
 
 			notyBid := cb.NotyBid{
 				Bidder:     uint32(bidder),
-				BidStart:   uint32(reBidSignal),
+				BidStart:   uint32(zeroBidding), /*前端重新叫訊號*/
 				LastBidder: uint32(currentBidder.Zone8),
 				//LastBidderName: fmt.Sprintf("%s-%s", CbSeat(currentBidder.Zone8), currentBidder.Name),
 				//LastBid:        fmt.Sprintf("%s", CbBid(currentBidder.Bid8)),
@@ -357,24 +319,19 @@ func (g *Game) GamePrivateNotyBid(currentBidder *RoomUser) {
 				Btn:     cb.NotyBid_disable_all,
 			}
 			payload.ProtoData = &notyBid
-			/*
-				g.roomManager.SendPayloadToPlayers(ClnRoomEvents.GameNotyBid, payload, BidScene) //廣播Public
-				time.Sleep(time.Millisecond * 400)
 
-				payload.Player = bidder                                                      //指定傳送給 bidder 開叫
-				g.roomManager.SendPayloadToPlayer(ClnRoomEvents.GamePrivateNotyBid, payload) //私人Private
-
-			*/
-
-			if err := g.roomManager.SendPayloadToPlayers(ClnRoomEvents.GameNotyBid, payload, pb.SceneType_game); err != nil { //廣播Public
+			//Public廣播
+			if err := g.roomManager.SendPayloadToPlayers(ClnRoomEvents.GameNotyBid, payload, pb.SceneType_game); err != nil {
 				//TODO 清空當前該遊戲桌在Server上的狀態
-				slog.Info("GamePrivateNotyBid", utilog.Err(err))
+				slog.Info("GamePrivateNotyBid[重新洗牌,重新競叫]", utilog.Err(err))
 				g.engine.ClearBiddingState()
 			}
-			time.Sleep(time.Millisecond * 400)
 
-			payload.Player = bidder                                                      //指定傳送給 bidder 開叫
+			time.Sleep(time.Millisecond * 400)
+			//Private 指定傳送給 bidder 開叫
+			payload.Player = bidder
 			g.roomManager.SendPayloadToPlayer(ClnRoomEvents.GamePrivateNotyBid, payload) //私人Private
+
 		case false: //競叫完成,遊戲開始
 
 			lead, declarer, dummy, suit, finallyBidding, err := g.engine.GameStartPlayInfo()
@@ -383,7 +340,7 @@ func (g *Game) GamePrivateNotyBid(currentBidder *RoomUser) {
 
 			if err != nil {
 				if errors.Is(err, ErrUnContract) {
-					slog.Error("GamePrivateNotyBid", slog.String("FYI", fmt.Sprintf("合約有問題,只能在合約確定才能呼叫GameStartPlayInfo,%s", utilog.Err(err))))
+					slog.Error("GamePrivateNotyBid[競叫完成,遊戲開始]", slog.String("FYI", fmt.Sprintf("合約有問題,只能在合約確定才能呼叫GameStartPlayInfo,%s", utilog.Err(err))))
 					//TODO 紀錄 log
 					return
 				}
@@ -391,7 +348,7 @@ func (g *Game) GamePrivateNotyBid(currentBidder *RoomUser) {
 
 			g.engine.ClearBiddingState()
 
-			// 向前端發送清除Bidding UI
+			// 向前端發送清除Bidding UI, 並停止(terminate)四家gauge
 			var clearScene = pb.OP{
 				Type:     pb.SceneType_game_clear_scene,
 				RealSeat: uint32(currentBidder.Zone8),
@@ -402,13 +359,13 @@ func (g *Game) GamePrivateNotyBid(currentBidder *RoomUser) {
 			//TODO 未來 工作
 			//todo zorn 這裡記住 RoundSuitKeep, 也是第一次紀錄RoundSuitKeep的地方
 			//以首引生成 RoundSuit keep
-			g.roundSuitKeeper = NewRoundSuitKeep(lead)
+			//g.roundSuitKeeper = NewRoundSuitKeep(lead)
 
-			//nextPlayer := g.SeatShift(leadPlayer)
-			//g.setEnginePlayer(leadPlayer, nextPlayer)
+			/* TBC: 因為產生新的玩家順序,所以要新的位置設定
+			g.setEnginePlayer(currentBidder.Zone8)
 
-			/* memo
-			   ............................................
+			//移動環形,並校準座位
+			next := g.SeatShift(currentBidder.Zone8)
 			*/
 
 			//送出首引封包
@@ -425,14 +382,18 @@ func (g *Game) GamePrivateNotyBid(currentBidder *RoomUser) {
 				DoubleString:   fmt.Sprintf("%s", finallyBidding.dbType),
 			}
 
-			slog.Debug("GamePrivateNotyBid[競叫完畢]",
+			slog.Debug("GamePrivateNotyBid[競叫完成,遊戲開始]",
 				slog.String(fmt.Sprintf("莊:%s  夢:%s  引:%s", CbSeat(declarer), CbSeat(dummy), CbSeat(lead)),
 					fmt.Sprintf("花色: %s   合約: %s   賭倍: %s ", CbSuit(suit), finallyBidding.contract, finallyBidding.dbType),
 				),
 			)
-			//廣播
+			//TODO 廣播給三家,但是不要送給首引
+			//    底下廣播給四家包含首引,目前workaround是前端gameFirstLead擋掉當首引是Global.loginUser.zone則跳掉gauge, 因為首引的gauge必須於底下 gamePrivateFirstLead 觸發
 			payload.ProtoData = &firstLead
-			g.roomManager.SendPayloadToPlayers(ClnRoomEvents.GameFirstLead, payload, pb.SceneType_game)
+			//原來 g.roomManager.SendPayloadToPlayers(ClnRoomEvents.GameFirstLead, payload, pb.SceneType_game)
+			g.roomManager.SendPayloadTo3Players(ClnRoomEvents.GameFirstLead, payload, lead)
+
+			// TODO 新增一個 SendPayloadTo3Players(eventName, payload, exclude uint8)
 
 			// 重要: g.syncPlayCard 很重要
 			//TODO: 將莊家牌組發送給夢家
@@ -448,9 +409,13 @@ func (g *Game) GamePrivateNotyBid(currentBidder *RoomUser) {
 			g.roomManager.SendPayloadToPlayer(ClnRoomEvents.GamePrivateShowHandToSeat /*向夢家亮莊家的牌*/, payload) //私人Private
 
 			time.Sleep(time.Millisecond * 400)
-			//TODO 通知首引準備出牌 開啟 首引 card enable
-			payload.Player = lead //傳給首引玩家                                                      //指定傳送給 bidder 開叫
-			payload.ProtoData = &firstLead
+
+			// 通知首引準備出牌 開啟 首引 card enable, 告知首引可打的牌與timeout, 觸發 gauge
+			leadNotice := new(cb.PlayNotice)
+			leadNotice.Seat = uint32(lead)
+			leadNotice.CardMinValue, leadNotice.CardMaxValue, leadNotice.TimeoutCardValue, leadNotice.TimeoutCardIdx = g.AvailablePlayRange(lead)
+			payload.ProtoData = leadNotice
+			payload.Player = lead                                                          //傳給首引玩家                                                      //指定傳送給 bidder 開叫
 			g.roomManager.SendPayloadToPlayer(ClnRoomEvents.GamePrivateFirstLead, payload) //私人Private
 		}
 	}
@@ -477,7 +442,9 @@ func (g *Game) GamePrivateFirstLead(leadPlayer *RoomUser) error {
 	slog.Debug("FYI", slog.String("Declarer", fmt.Sprintf("%s", CbSeat(uint8(g.Declarer)))), slog.String("Dummy", fmt.Sprintf("%s", CbSeat(uint8(g.Dummy)))), slog.String("Lead", fmt.Sprintf("%s", CbSeat(uint8(g.Lead)))), slog.String("Defender", fmt.Sprintf("%s", CbSeat(uint8(g.Defender)))))
 	slog.Debug("首引打出", slog.String("FYI", fmt.Sprintf("首引%s 打出 %s", CbSeat(leadPlayer.Zone8), CbCard(leadPlayer.Play8))))
 
-	// memo 1)向三家亮夢家牌
+	// memo 1)向三家亮夢家牌 TODO: 太難看了, Refactor 一包送三家
+	//g.roomManager.SendPayloadToSeats(ClnRoomEvents.GameCardAction, payloadAttack, exclude)
+
 	g.roomManager.SendPayloadsToPlayers(ClnRoomEvents.GamePrivateShowHandToSeat,
 		payloadData{
 			ProtoData: &cb.PlayersCards{
@@ -565,6 +532,7 @@ func (g *Game) GamePrivateFirstLead(leadPlayer *RoomUser) error {
 
 		nextNotice = &cb.PlayNotice{
 			Type:         cb.PlayNotice_Turn,
+			IsPlayAgent:  true, /*若為莊打夢,則前端要修正seat為封包發送者(nextRealPlaySeat)*/
 			Seat:         uint32(nextPlayer),
 			PreviousSeat: leadPlayer.PlaySeat, /*為了停止上一次的gauge*/
 		}
@@ -586,6 +554,7 @@ func (g *Game) GamePrivateFirstLead(leadPlayer *RoomUser) error {
 	return nil
 }
 
+// 傳入下一位玩家座位,回傳實際出牌的玩家(例如: 下一位是夢家,但實際出牌的是莊家)
 func (g *Game) playTurn(nextPlayer uint8) uint8 {
 	nextSeat := CbSeat(nextPlayer)
 
@@ -610,19 +579,20 @@ func (g *Game) AvailablePlayRange(player uint8) (minimum, maximum, timeout, time
 		hitAvailable = false //
 		hitFirst     = false
 		hand         = g.deckInPlay[player]
-		m, M         uint8
+
+		//為了要讓底下if判斷式成立,所以將 m, M 分別設定到極限
+		m, M = spadeAce + uint8(1), uint8(BaseCover)
 	)
 	//預設隨便出都可 (這表示,沒有可出的花色,可以任意出)
 	minimum, maximum = uint32(club2), uint32(spadeAce)
-
-	m, M = g.roundMin, g.roundMax
+	fmt.Printf("min: %s  (%d) ~  %s  (%d) \n", CbCard(g.roundMin), g.roundMin, CbCard(g.roundMax), g.roundMax)
 
 	for i := range hand {
-
 		if hand[i] == uint8(BaseCover) {
 			continue
 		}
 
+		fmt.Printf(" %s   %d\n", CbCard(hand[i]), hand[i])
 		// 陣列中第一張有效牌,與其索引
 		if !hitFirst {
 			hitFirst = true
@@ -636,9 +606,12 @@ func (g *Game) AvailablePlayRange(player uint8) (minimum, maximum, timeout, time
 			hitAvailable = true
 			if M < hand[i] {
 				M = hand[i]
+				//fmt.Printf(" Max %d\n", M)
 			}
 			if m > hand[i] {
 				m = hand[i]
+				//fmt.Printf(" min: %d\n", m)
+				timeoutCardIndex = uint32(i)
 			}
 		}
 	}
@@ -646,7 +619,14 @@ func (g *Game) AvailablePlayRange(player uint8) (minimum, maximum, timeout, time
 	if hitAvailable {
 		minimum = uint32(m)
 		maximum = uint32(M)
+		timeout = minimum
 	}
+
+	//minimum, maximum, timeout, timeoutCardIndex, player
+
+	slog.Debug(fmt.Sprintf("%s可出牌區間", CbSeat(player)),
+		slog.String("FYI", fmt.Sprintf("%s  ~  %s   timeout: %s (索引值:%d)", CbCard(minimum), CbCard(maximum), CbCard(timeout), timeoutCardIndex)))
+
 	return
 }
 
@@ -692,91 +672,144 @@ func (g *Game) GamePrivateCardHover(cardAction *cb.CardAction) error {
 }
 
 // GamePrivateCardPlayClick 玩家打出牌
-//
-//	0)memo 必須回覆 pb.CardAction 讓前端的hand可以refresh
-//	1)memo 通知下一個Play
+/* 當玩家點擊出牌時,有底下情境與相應要處理的事情
+    當莊家點擊莊家牌時:
+      🥎 )回覆(四家UI)莊家打出什麼牌
+        ▶️ UI - 莊家,與夢家會看到直接打出的明牌, 莊家,與夢家會看到莊家手上重整後的牌組
+		▶️ UI - 防家會看到莊打出暗牌翻明牌
+
+    當莊家點擊夢家牌時:
+      🥎 )回覆(四家UI)夢家打出什麼牌
+        ▶️ UI - 莊家,與夢家會看到直接打出的明牌, 莊家,與夢家會看到夢家家手上重整後的牌組
+		▶️ UI - 防家會看到莊打出暗牌翻明牌
+
+	當防家點擊防家牌時:
+      🥎 )回覆(四家UI)夢家打出什麼牌
+        ▶️ UI - 莊家,與夢家與防家夥伴會看到打出的暗牌變明牌
+		▶️ UI - 該防家會看到自己打出明牌, 和該防家手上重的整牌
+
+	🥎 )回覆打出的牌,一併回覆下一家Gauge PASS牌,與下一家限制可出的牌,並停止打出牌者的Gauge 停止OP
+*/
 func (g *Game) GamePrivateCardPlayClick(clickPlayer *RoomUser) error {
 
 	slog.Debug("出牌", slog.String("FYI",
-		fmt.Sprintf("%s (%s) 打出 %s 牌 %s",
+		fmt.Sprintf("%s (%s) 打出 %s 牌 %s , (%s)的牌被打出",
 			CbSeat(clickPlayer.Zone8),
 			clickPlayer.Name,
 			CbSeat(clickPlayer.PlaySeat),
 			CbCard(clickPlayer.Play8),
+			CbSeat(clickPlayer.PlaySeat8),
 		)))
 
-	// 重要: 判斷誰打出的牌,可透過 RoomUser PlaySeat8 屬性
-	/*
-		switch clickPlayer.PlaySeat8 {
-		case clickPlayer.Zone8: //莊打莊,防打防 *
-		case uint8(g.Dummy):
-			if clickPlayer.Zone8 == uint8(g.Declarer) {
-				//莊打夢
-			}
-		}
-	*/
-
-	/* 當玩家點擊出牌時,有底下情境與相應要處理的事情
-	    當莊家點擊莊家牌時:
-	      🥎 )回覆(四家UI)莊家打出什麼牌
-	        ▶️ UI - 莊家,與夢家會看到直接打出的明牌, 莊家,與夢家會看到莊家手上重整後的牌組
-			▶️ UI - 防家會看到莊打出暗牌翻明牌
-
-	    當莊家點擊夢家牌時:
-	      🥎 )回覆(四家UI)夢家打出什麼牌
-	        ▶️ UI - 莊家,與夢家會看到直接打出的明牌, 莊家,與夢家會看到夢家家手上重整後的牌組
-			▶️ UI - 防家會看到莊打出暗牌翻明牌
-
-		當防家點擊防家牌時:
-	      🥎 )回覆(四家UI)夢家打出什麼牌
-	        ▶️ UI - 莊家,與夢家與防家夥伴會看到打出的暗牌變明牌
-			▶️ UI - 該防家會看到自己打出明牌, 和該防家手上重的整牌
-
-		🥎 )回覆打出的牌,一併回覆下一家Gauge PASS牌,與下一家限制可出的牌,並停止打出牌者的Gauge 停止OP
-	*/
-
 	var (
-		payload payloadData = payloadData{
+		nextPlayer       = g.SeatShift(clickPlayer.PlaySeat8)
+		nextRealPlaySeat = g.playTurn(nextPlayer)
+
+		refresh, outCardIdx = g.PlayOutHandRefresh(clickPlayer.PlaySeat8, clickPlayer.Play8)
+
+		attackCardAction = &cb.CardAction{
+			AfterPlayCards: nil, /*後面決定*/
+			Type:           cb.CardAction_play,
+			CardIndex:      10000, /*後面決定*/
+			CardValue:      uint32(clickPlayer.Play8),
+			Seat:           uint32(clickPlayer.PlaySeat8),
+			NextSeat:       uint32(nextRealPlaySeat),
+			IsCardCover:    false, /*後面決定*/
+		}
+		defenderCardAction = &cb.CardAction{
+			Type:        attackCardAction.Type,
+			CardIndex:   attackCardAction.CardIndex, /*後面決定*/
+			CardValue:   attackCardAction.CardValue,
+			Seat:        attackCardAction.Seat,
+			NextSeat:    attackCardAction.NextSeat,
+			IsCardCover: true, /*後面決定*/
+		}
+
+		nextNotice = &cb.PlayNotice{
+			Type:         cb.PlayNotice_Turn,
+			PreviousSeat: attackCardAction.Seat,
+			Seat:         attackCardAction.NextSeat,
+			IsPlayAgent:  nextPlayer != nextRealPlaySeat,
+		}
+		payloadAttack = payloadData{
+			ProtoData:   attackCardAction,
 			PayloadType: ProtobufType,
 		}
-
-		//出牌者手上牌集合(hand)
-		cards                        []uint8 = g.deckInPlay[clickPlayer.Zone8][:]
-		cardValue, cardIdx, cardsLen uint32  = 0, 0, uint32(len(cards))
-
-		//因為牌已經打出,所以向四家送出打出者Gauge的停止 OP
-		op = &pb.OP{
-			Type:     pb.SceneType_game_gauge_terminate, /*memo : SceneType_game_gauge_terminate 已經廢棄*/
-			RealSeat: clickPlayer.Zone,
+		payloadDefender = payloadData{
+			ProtoData:   defenderCardAction,
+			PayloadType: ProtobufType,
+		}
+		noticePayload = payloadData{
+			ProtoData:   nextNotice,
+			PayloadType: ProtobufType,
 		}
 	)
 
-	//找出出牌者所出的牌在手上牌集合中對應的索引(cardIdx),與牌面值(cardValue)
-	for ; cardIdx < cardsLen; cardIdx++ {
-		if cards[cardIdx] == clickPlayer.Play8 {
-			cardValue = uint32(cards[cardIdx]) //牌值
-			break
+	// 重要: 判斷誰打出的牌,可透過 RoomUser PlaySeat8 屬性
+	switch clickPlayer.PlaySeat8 {
+	case clickPlayer.Zone8: //莊打莊,防打防 *
+
+		switch clickPlayer.Zone8 {
+		case uint8(g.Declarer): //莊打出
+			//			▶️ UI - 莊家,與夢家會看到直接打出的明牌, 莊家,與夢家會看到莊家手上重整後的牌組
+			//			▶️ UI - 防家會看到莊打出暗牌翻明牌
+			//1. 設定 夢家的 refresh
+			//attackCardAction.AfterPlayCards = refresh
+			//attackCardAction.CardIndex = outCardIdx //TBC 似乎可以省略
+			//attackCardAction.IsCardCover = false
+
+			//2. 防家會看到夢的暗牌翻明
+			defenderCardAction.CardIndex = outCardIdx
+			defenderCardAction.IsCardCover = true
+
+			g.roomManager.SendPayloadToDefendersToAttacker(ClnRoomEvents.GameCardAction, payloadDefender, payloadAttack, uint8(g.Declarer), uint8(g.Dummy))
+
+		default: //防打出
+			//			▶️ UI - 莊家,與夢家與防家夥伴會看到打出的暗牌變明牌
+			//			▶️ UI - 該防家會看到自己打出明牌, 和該防家手上重的整牌
+
+			attackCardAction.AfterPlayCards = nil
+			attackCardAction.CardIndex = outCardIdx //TBC 似乎可以省略
+			attackCardAction.IsCardCover = true
+
+			//TODO: 莊,夢,防家夥伴一包送三個
+			//exclude := clickPlayer.Zone8
+			//g.roomManager.SendPayloadToSeats(ClnRoomEvents.GameCardAction, payloadAttack, exclude)
+
+			//TODO: 防家要分兩個封包,因為打出者要現名牌,另一個防家要現暗牌
+			//1. 打出者防家
+			defenderCardAction.IsCardCover = false
+			defenderCardAction.AfterPlayCards = refresh
+			defenderCardAction.CardIndex = outCardIdx                                        //TBC 似乎可以省略
+			g.roomManager.SendPayloadToPlayer(ClnRoomEvents.GameCardAction, payloadDefender) //私人Private
+
+		} //eofSwitch
+
+	default: //莊打夢
+		if uint8(g.Declarer) != clickPlayer.Zone8 {
+			slog.Warn("莊家身份錯誤", slog.String("FYI", fmt.Sprintf("莊應為:%s ,但收到 %s 打出 %s", g.Declarer, CbSeat(clickPlayer.Zone8), CbCard(clickPlayer.Play8))))
+			return nil
 		}
+		if uint8(g.Dummy) != clickPlayer.PlaySeat8 {
+			slog.Warn("夢家身份錯誤", slog.String("FYI", fmt.Sprintf("夢應為:%s ,但收到 %s 打出 %s", g.Dummy, CbSeat(clickPlayer.PlaySeat8), CbCard(clickPlayer.Play8))))
+			return nil
+		}
+
+		//1. 設定 夢家的 refresh
+		//attackCardAction.AfterPlayCards = refresh
+		//attackCardAction.CardIndex = outCardIdx //TBC 似乎可以省略
+		//attackCardAction.IsCardCover = false
+
+		//2. 防家會看到夢的暗牌翻明
+		defenderCardAction.CardIndex = outCardIdx
+		defenderCardAction.IsCardCover = true
+
+		g.roomManager.SendPayloadToDefendersToAttacker(ClnRoomEvents.GameCardAction, payloadDefender, payloadAttack, uint8(g.Declarer), uint8(g.Dummy))
 	}
 
-	//重整私人hand
-	//回覆給前端剛打出牌的玩家,進行整理畫面
-	payload.Player = clickPlayer.Zone8
-	payload.ProtoData = &cb.CardAction{
-		Type:           cb.CardAction_play,
-		CardIndex:      cardIdx,
-		CardValue:      cardValue,
-		Seat:           uint32(clickPlayer.Zone8), /*關閉Gauge,與執行該位置CardAction_play動作*/
-		NextSeat:       uint32(clickPlayer.Zone8), /*啟動下一個Gauge*/
-		IsCardCover:    false,                     /*重整牌一定要設成false*/
-		AfterPlayCards: append(g.deckInPlay[clickPlayer.Zone8][:][:cardIdx], g.deckInPlay[clickPlayer.Zone8][:][cardIdx+1:]...),
-	}
-	g.roomManager.SendPayloadToPlayer(ClnRoomEvents.GameCardAction, payload) //私人Private
-
-	//廣播四家中斷gauge, memo: 使用OP停止Gauge方式已經廢棄,改用CardAction(Seat,NextSeat)
-	payload.ProtoData = op
-	g.roomManager.SendPayloadToPlayers(ClnRoomEvents.GameOP, payload, pb.SceneType_game)
-
+	//設定下一位玩家通知
+	nextNotice.CardMinValue, nextNotice.CardMaxValue, nextNotice.TimeoutCardValue, nextNotice.TimeoutCardIdx = g.AvailablePlayRange(nextPlayer)
+	g.roomManager.SendPayloadToPlayer(ClnRoomEvents.GamePrivateCardPlayClick, noticePayload) //私人Private
 	return nil
 }
 

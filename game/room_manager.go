@@ -34,9 +34,22 @@ var (
 	}
 )
 
+const (
+	ByteType PayloadType = iota
+	ProtobufType
+)
+
 // RoomManager 管理進入房間的所有使用者,包含廣播所有房間使用者,發送訊息給指定玩家
 // 未來可能會分方位(RoomZorn),禁言,聊天可能都透過RoomManager
 type (
+	PayloadType uint8
+
+	payloadData struct {
+		Player      uint8         //代表player seat 通常針對指定的玩家, 表示Zone的情境應該不會發生
+		Data        []uint8       // 可以是byte, bytes
+		ProtoData   proto.Message // proto
+		PayloadType PayloadType   //這個 payload 屬於那種型態的封	包
+	}
 
 	// 對遊戲桌table 操作或請求
 	tableRequest struct {
@@ -1202,8 +1215,8 @@ func (mr *RoomManager) SeatShift(seat uint8) (next uint8) {
  BroadcastXXXX 用於廣播,無論玩家,觀眾都會同時送出同樣的訊息,通常用於公告,聊天資訊,遊戲共同訊息(叫牌)
 ======================== ====================================================================== */
 
-// SendPlayersHandDeal 因為競叫流局,在重新發新牌前,顯示另三家持牌
-func (mr *RoomManager) SendPlayersHandDeal() {
+// SendShowPlayersCardsOut 因為競叫流局,在重新發新牌前,四家攤牌(顯示另三家持牌)
+func (mr *RoomManager) SendShowPlayersCardsOut() {
 	tqs := &tableRequest{
 		topic: _GetZoneUsers,
 	}
@@ -1284,7 +1297,7 @@ func (mr *RoomManager) SendPlayersHandDeal() {
 	var (
 		payload    []byte
 		connection *skf.NSConn
-		eventName  string = ClnRoomEvents.GamePlayersHandDeal
+		eventName  string = ClnRoomEvents.GameCardsShowUp
 	)
 	for connection, payload = range actions {
 		connection.EmitBinary(eventName, payload)
@@ -1526,8 +1539,66 @@ func (mr *RoomManager) SendPayloadToPlayers(eventName string, payload payloadDat
 
 //--------------------------------------------------------------------
 
+// SendPayloadTo3Players 對其中三個玩家送出同又事件的封包
+// 場景: 每一回合和開始時,有三家收到PlayNotice對gauge進行不帶回呼的計數, 而實際下一位玩家則另外專門封包通知,已開啟帶回呼的計數(gauge)
+func (mr *RoomManager) SendPayloadTo3Players(eventName string, payload payloadData, exclude uint8) {
+	var (
+		err          error
+		errFmtString = "%s玩家連線中斷"
+		//三家connection
+		connections = make(map[uint8]*skf.NSConn)
+		e, s, w, n  = uint8(east), uint8(south), uint8(west), uint8(north)
+	)
+
+	connections[e], connections[s], connections[w], connections[n] = mr.AcquirePlayerConnections()
+
+	if connections[e] == nil {
+		err = fmt.Errorf(errFmtString, "east")
+	}
+	if connections[s] == nil {
+		err = fmt.Errorf(errFmtString, "north")
+	}
+	if connections[w] == nil {
+		err = fmt.Errorf(errFmtString, "west")
+	}
+	if connections[n] == nil {
+		err = fmt.Errorf(errFmtString, "north")
+	}
+
+	if err != nil {
+		slog.Error("連線中斷(SendPayloadTo3Players)", utilog.Err(err))
+		//TODO 對未斷線玩家,送出現在狀況,好讓前端popup
+		for _, nsConn := range connections {
+			if nsConn != nil {
+				nsConn.EmitBinary("popup-warning", []byte(err.Error()))
+			}
+		}
+
+	} else {
+		for seat, con := range connections {
+			if con != nil {
+				switch seat {
+				case exclude:
+					//skip exclude 玩家封包發送
+				default:
+					// 三家送出同樣的封包
+					err = mr.send(con, eventName, payload)
+				}
+			} else {
+				//TODO: 斷線處理
+				slog.Warn("payload發送失敗(SendPayloadTo3Players)", utilog.Err(errors.New(fmt.Sprintf("座位%s %s", CbSeat(seat), err))))
+			}
+		}
+
+		if err != nil {
+			slog.Warn("payload發送失敗(SendPayloadTo3Players)", utilog.Err(err))
+		}
+	}
+
+}
+
 // SendPayloadToOneAndPayloadToOthers
-// 送出 commonPayload  給三個指定玩家,送出 specialPayload 給指定玩家(specialSeat)
+// 對同樣的事件EventName, 送出 commonPayload  給三個指定玩家,而送出 specialPayload 給指定玩家(specialSeat)
 // 例如: 對西,北,南送出蓋牌出牌, 但東要送出明牌出牌 (用於玩家出牌)
 func (mr *RoomManager) SendPayloadToOneAndPayloadToOthers(
 	eventName string, commonPayload, specialPayload payloadData, specialSeat uint8) {
@@ -1583,6 +1654,67 @@ func (mr *RoomManager) SendPayloadToOneAndPayloadToOthers(
 
 		if err != nil {
 			slog.Warn("payload發送失敗(SendPayloadToOneAndPayloadToOthers)", utilog.Err(err))
+		}
+	}
+}
+
+// SendPayloadToDefendersToAttacker 分別送給莊夢一包, 防家們一包
+// 除了莊(declarer),夢(dummy)剩下的就是defenders
+func (mr *RoomManager) SendPayloadToDefendersToAttacker(eventName string,
+	defenderPayload, attackerPayload payloadData,
+	declarer, dummy uint8) {
+
+	var (
+		err          error
+		errFmtString = "%s玩家連線中斷"
+		//三家connection
+		connections = make(map[uint8]*skf.NSConn)
+		e, s, w, n  = uint8(east), uint8(south), uint8(west), uint8(north)
+	)
+
+	connections[e], connections[s], connections[w], connections[n] = mr.AcquirePlayerConnections()
+
+	if connections[e] == nil {
+		err = fmt.Errorf(errFmtString, "east")
+	}
+	if connections[s] == nil {
+		err = fmt.Errorf(errFmtString, "north")
+	}
+	if connections[w] == nil {
+		err = fmt.Errorf(errFmtString, "west")
+	}
+	if connections[n] == nil {
+		err = fmt.Errorf(errFmtString, "north")
+	}
+
+	if err != nil {
+		slog.Error("連線中斷(SendPayloadToDefendersToAttacker)", utilog.Err(err))
+		//TODO 對未斷線玩家,送出現在狀況,好讓前端popup
+		for _, nsConn := range connections {
+			if nsConn != nil {
+				nsConn.EmitBinary("popup-warning", []byte(err.Error()))
+			}
+		}
+
+	} else {
+		for seat, con := range connections {
+			if con != nil {
+				switch seat {
+				case declarer:
+					fallthrough /*莊,夢*/
+				case dummy:
+					err = mr.send(con, eventName, attackerPayload)
+				default: /*防家*/
+					err = mr.send(con, eventName, defenderPayload)
+				}
+			} else {
+				//TODO: 斷線處理
+				slog.Warn("payload發送失敗(SendPayloadToDefendersToAttacker)", utilog.Err(errors.New(fmt.Sprintf("座位%s %s", CbSeat(seat), err))))
+			}
+		}
+
+		if err != nil {
+			slog.Warn("payload發送失敗(SendPayloadToDefendersToAttacker)", utilog.Err(err))
 		}
 	}
 }

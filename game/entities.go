@@ -504,7 +504,7 @@ func GetRoundRangeByFirstPlay(firstPlay uint8) CardRange {
 	//模擬四家的出牌
 	// first首打
 	var first = CbCard(firstPlay)
-	fmt.Printf("first Play: %08b %[1]d ", first)
+	fmt.Printf("first Play: %08b %[1]d  %[1]s\n", first)
 
 	switch {
 	case first < Diamond2:
