@@ -808,62 +808,68 @@ func (mr *RoomManager) PlayerJoin(user *RoomUser) {
 	slog.Debug("PlayerJoin", slog.Bool("isOnSeat", response.isOnSeat), slog.Bool("isGameStart", response.isGameStart))
 
 	if response.isOnSeat && response.isGameStart {
-
 		// g.start會洗牌,亂數取得開叫者,及禁叫品項, bidder首叫會是亂數取的
-		bidder, zero := mr.g.start()
-
-		slog.Info("PlayerJoin之競叫開始", slog.String("加入遊戲者", user.Name), slog.String("首叫者", fmt.Sprintf("%s", CbSeat(bidder))))
-
-		//遊戲找出桌中找出開叫者
-		/*		bidderConn, bidderName, isOnSeat, _ := mr.FindPlayer(bidder)
-				if !isOnSeat {
-					slog.Error("PlayerJoin無法開叫", utilog.Err(fmt.Errorf("開叫者座位%s可能斷線,或連線掛了", CbSeat(bidder))))
-					panic("嚴重錯誤,玩家斷線不在位置上,無法開叫")
-					//TODO 廣播玩家斷線
-				}
-		*/
-		// 發牌
-		mr.SendDeal()
-
-		//延遲,是因為最後進來的玩家前端render速度太慢,會導致接收到NotyBid時來不及,所以延遲幾秒
-		//time.Sleep(time.Millisecond * 700)
-
-		// 注意 需要分別發送給豬面上的玩家通知 GamePrivateNotyBid
-		//個人開叫提示, 前端 必須處理
-		//TODO : 確認禁叫品就是當前最新的叫品,前端(label.dart-setBidTable)可以方便處理
-		//bidder 表示下一個開叫牌者 前端(Player,觀眾席)必須處理
-		//禁叫品項,因為是首叫所以禁止叫品是 重要 zeroBid競叫開始
-		//第三個參數:上一個叫牌者(ValueNotSet)
-		//第四個參數: 上一次叫品(ValueNotSet)
-		//第五個參數: 一線double value
-		//第六個參數: 一線double 開啟 (0:表示disable)
-		//第七個參數: 一線ReDouble value
-		//第八個參數: 一線ReDouble 開啟 (0:表示disable)
-		//   參考: GamePrivateNotyBid
-		notyBid := cb.NotyBid{
-			Bidder:     uint32(bidder),
-			BidStart:   uint32(zero),
-			LastBidder: uint32(valueNotSet), /*一定設,否則前端gauge無法判斷要停止的zone*/
-			Double1:    uint32(Db1),
-			Double2:    uint32(Db2),
-			Btn:        cb.NotyBid_disable_all,
-		}
-
-		payload.ProtoData = &notyBid
-		payload.PayloadType = ProtobufType
-
-		// 重要
-		// memo 底下通知順序很重要,一定要先Public,才Private, 因為Public前端會先初始 Bidding Table 設定
-		//  step1 必須先送出Public (GameNotyBid),進行前端Bidding Table生成
-		//  step2 才能再送出Private (GamePrivateNotyBid) 給當事人
-		mr.SendPayloadToPlayers(ClnRoomEvents.GameNotyBid, payload, pb.SceneType_game) //廣播Public
-
-		time.Sleep(time.Millisecond * 400)
-		//指定傳送給 bidder 開叫
-		payload.Player = bidder
-		mr.SendPayloadToPlayer(ClnRoomEvents.GamePrivateNotyBid, payload) //私人Private
+		bidder, zero := mr.SendGameStart()
+		slog.Info("PlayerJoin之競叫開始", slog.String("加入遊戲者", user.Name), slog.String("首叫者", fmt.Sprintf("%s", CbSeat(bidder))), slog.String("初始叫品", fmt.Sprintf("%s", CbBid(zero))))
 	}
 
+}
+
+func (mr *RoomManager) SendGameStart() (lead, bid uint8) {
+
+	//通知(private)個人玩家Player上座了
+	payload := payloadData{
+		PayloadType: ProtobufType,
+	}
+
+	// 首引, 以及初始叫品(ZeroBid)
+	lead, bid = mr.g.start()
+
+	mr.g.SeatShift(lead)
+
+	// 發牌
+	mr.SendDeal()
+
+	//延遲,是因為最後進來的玩家前端render速度太慢,會導致接收到NotyBid時來不及,所以延遲幾秒
+	//time.Sleep(time.Millisecond * 700)
+
+	// 注意 需要分別發送給桌面上的玩家通知 GamePrivateNotyBid
+	//個人開叫提示, 前端 必須處理
+	//TODO : 確認禁叫品就是當前最新的叫品,前端(label.dart-setBidTable)可以方便處理
+	//lead 表示下一個開叫牌者 前端(Player,觀眾席)必須處理
+	//禁叫品項,因為是首叫所以禁止叫品是 重要 zeroBid競叫開始
+	//第三個參數:上一個叫牌者(ValueNotSet)
+	//第四個參數: 上一次叫品(ValueNotSet)
+	//第五個參數: 一線double value
+	//第六個參數: 一線double 開啟 (0:表示disable)
+	//第七個參數: 一線ReDouble value
+	//第八個參數: 一線ReDouble 開啟 (0:表示disable)
+	//   參考: GamePrivateNotyBid
+	notyBid := cb.NotyBid{
+		Bidder:     uint32(lead),
+		BidStart:   uint32(bid),
+		LastBidder: uint32(valueNotSet), /*一定設,否則前端gauge無法判斷要停止的zone*/
+		Double1:    uint32(Db1),
+		Double2:    uint32(Db2),
+		Btn:        cb.NotyBid_disable_all,
+	}
+
+	payload.ProtoData = &notyBid
+	payload.PayloadType = ProtobufType
+
+	// 重要
+	// memo 底下通知順序很重要,一定要先Public,才Private, 因為Public前端會先初始 Bidding Table 設定
+	//  step1 必須先送出Public (GameNotyBid),進行前端Bidding Table生成
+	//  step2 才能再送出Private (GamePrivateNotyBid) 給當事人
+	//mr.SendPayloadToPlayers(ClnRoomEvents.GameNotyBid, payload, pb.SceneType_game) //廣播Public
+	mr.SendPayloadToPlayers(ClnRoomEvents.GameNotyBid, &notyBid, pb.SceneType_game) //廣播Public
+
+	time.Sleep(time.Millisecond * 400)
+	//指定傳送給 lead 開叫
+	payload.Player = lead
+	mr.SendPayloadToPlayer(ClnRoomEvents.GamePrivateNotyBid, payload) //私人Private
+
+	return
 }
 
 // PlayerLeave 加入, 底層透過呼叫 playerJoin, 進行離桌程序
@@ -1472,13 +1478,18 @@ func (mr *RoomManager) SendPayloadToPlayers(eventName string, payload payloadDat
 
 // SendPayloadToPlayers 對遊戲中四位玩家發一則訊息,
 // sceneType表示正於何種場景進行訊息發送,若有人斷線可作相應處理,例如:遊戲場景,送出清除遊戲場警訊號
-func (mr *RoomManager) SendPayloadToPlayers(eventName string, payload payloadData, sceneType pb.SceneType) error {
+func (mr *RoomManager) SendPayloadToPlayers(eventName string, protoMessage proto.Message, sceneType pb.SceneType) error {
 	var (
 		err          error
 		errFmtString = "%s 玩家連線中斷"
 		connections  = make(map[uint8]*skf.NSConn)
 		e, s, w, n   = uint8(east), uint8(south), uint8(west), uint8(north)
 		seat         uint8
+
+		payload = payloadData{
+			ProtoData:   protoMessage,
+			PayloadType: ProtobufType,
+		}
 	)
 
 	connections[e], connections[s], connections[w], connections[n] = mr.AcquirePlayerConnections()
@@ -1539,15 +1550,46 @@ func (mr *RoomManager) SendPayloadToPlayers(eventName string, payload payloadDat
 
 //--------------------------------------------------------------------
 
-// SendPayloadTo3Players 對其中三個玩家送出同又事件的封包
+// SendPayloadToTwoPlayer 將同一個封包送向進攻方(莊,夢)
+func (mr *RoomManager) SendPayloadToTwoPlayer(eventName string, protoMessage proto.Message, player1, player2 uint8) error {
+	var (
+		err error
+		//三家connection
+		connections = make(map[uint8]*skf.NSConn)
+		e, s, w, n  = uint8(east), uint8(south), uint8(west), uint8(north)
+		payload     = payloadData{
+			ProtoData:   protoMessage,
+			PayloadType: ProtobufType,
+		}
+	)
+
+	connections[e], connections[s], connections[w], connections[n] = mr.AcquirePlayerConnections()
+	for seat, con := range connections {
+		switch seat {
+		case player1, player2:
+			// 莊夢兩家送出同樣的封包
+			err = mr.send(con, eventName, payload)
+		default:
+			continue
+		}
+	}
+	return err
+}
+
+// SendPayloadTo3PlayersByExclude 使用exclude(排除掉玩家),對桌上三個玩家送出同一事件的封包
 // 場景: 每一回合和開始時,有三家收到PlayNotice對gauge進行不帶回呼的計數, 而實際下一位玩家則另外專門封包通知,已開啟帶回呼的計數(gauge)
-func (mr *RoomManager) SendPayloadTo3Players(eventName string, payload payloadData, exclude uint8) {
+func (mr *RoomManager) SendPayloadTo3PlayersByExclude(eventName string, protoMessage proto.Message, exclude uint8) {
 	var (
 		err          error
 		errFmtString = "%s玩家連線中斷"
 		//三家connection
 		connections = make(map[uint8]*skf.NSConn)
 		e, s, w, n  = uint8(east), uint8(south), uint8(west), uint8(north)
+
+		payload = payloadData{
+			ProtoData:   protoMessage,
+			PayloadType: ProtobufType,
+		}
 	)
 
 	connections[e], connections[s], connections[w], connections[n] = mr.AcquirePlayerConnections()
@@ -1566,7 +1608,7 @@ func (mr *RoomManager) SendPayloadTo3Players(eventName string, payload payloadDa
 	}
 
 	if err != nil {
-		slog.Error("連線中斷(SendPayloadTo3Players)", utilog.Err(err))
+		slog.Error("連線中斷(SendPayloadTo3PlayersByExclude)", utilog.Err(err))
 		//TODO 對未斷線玩家,送出現在狀況,好讓前端popup
 		for _, nsConn := range connections {
 			if nsConn != nil {
@@ -1586,12 +1628,12 @@ func (mr *RoomManager) SendPayloadTo3Players(eventName string, payload payloadDa
 				}
 			} else {
 				//TODO: 斷線處理
-				slog.Warn("payload發送失敗(SendPayloadTo3Players)", utilog.Err(errors.New(fmt.Sprintf("座位%s %s", CbSeat(seat), err))))
+				slog.Warn("payload發送失敗(SendPayloadTo3PlayersByExclude)", utilog.Err(errors.New(fmt.Sprintf("座位%s %s", CbSeat(seat), err))))
 			}
 		}
 
 		if err != nil {
-			slog.Warn("payload發送失敗(SendPayloadTo3Players)", utilog.Err(err))
+			slog.Warn("payload發送失敗(SendPayloadTo3PlayersByExclude)", utilog.Err(err))
 		}
 	}
 
@@ -1659,9 +1701,9 @@ func (mr *RoomManager) SendPayloadToOneAndPayloadToOthers(
 }
 
 // SendPayloadToDefendersToAttacker 分別送給莊夢一包, 防家們一包
-// 除了莊(declarer),夢(dummy)剩下的就是defenders
+// 莊(declarer),夢(dummy)發送 attackerPayload, 防家們(defenders)發送 defenderPayload
 func (mr *RoomManager) SendPayloadToDefendersToAttacker(eventName string,
-	defenderPayload, attackerPayload payloadData,
+	defender2, attacker2 proto.Message,
 	declarer, dummy uint8) {
 
 	var (
@@ -1670,6 +1712,15 @@ func (mr *RoomManager) SendPayloadToDefendersToAttacker(eventName string,
 		//三家connection
 		connections = make(map[uint8]*skf.NSConn)
 		e, s, w, n  = uint8(east), uint8(south), uint8(west), uint8(north)
+
+		defenderPayload, attackerPayload payloadData = payloadData{
+			ProtoData:   defender2,
+			PayloadType: ProtobufType,
+		},
+			payloadData{
+				ProtoData:   attacker2,
+				PayloadType: ProtobufType,
+			}
 	)
 
 	connections[e], connections[s], connections[w], connections[n] = mr.AcquirePlayerConnections()
@@ -1724,7 +1775,8 @@ func (mr *RoomManager) SendPayloadToDefendersToAttacker(eventName string,
 // SendPayloadToPlayer 發送訊息給payload中指定的player, 指定eventName, 訊息 payload (payload內部必須指定seat(player))
 func (mr *RoomManager) SendPayloadToPlayer(eventName string, payload payloadData /*, seat uint8*/) error {
 	//slog.Debug("SendPayloadsToPlayer", slog.String("發送", fmt.Sprintf("%s(%d)", CbSeat(payload.Player), payload.Player)))
-	//底下dbg用可以移除
+
+	//重要: payload 必取指定 Player (seat)
 	conn, name, found, _, err := mr.FindPlayer(payload.Player)
 
 	if err != nil {
@@ -1742,10 +1794,93 @@ func (mr *RoomManager) SendPayloadToPlayer(eventName string, payload payloadData
 	return nil
 }
 
+// SendDummyCardsByExcludeDummy 夢家向三家現牌, eventName事件名稱, dummyHand夢家持牌, dummySeat 夢家, err 送封包錯誤
+// 這個方法不會向夢家發送封包,但會向另外三家發送
+func (mr *RoomManager) SendDummyCardsByExcludeDummy(eventName string, dummyHand *[]uint8, dummySeat uint8) (err error) {
+	// 排除 dummy 不送
+	var (
+		connections = make(map[uint8]*skf.NSConn)
+		dummyCards  = &cb.PlayersCards{
+			Seat: uint32(dummySeat),
+			Data: make(map[uint32][]uint8),
+		}
+		payload = payloadData{
+			PayloadType: ProtobufType,
+			ProtoData:   dummyCards,
+		}
+		lastSend uint32
+	)
+
+	connections[uint8(east)], connections[uint8(south)], connections[uint8(west)], connections[uint8(north)] = mr.AcquirePlayerConnections()
+
+	for seat, conn := range connections {
+		switch seat {
+		case dummySeat:
+			continue
+		default:
+			// key 改變,但map value只會allocate一次
+			switch len(dummyCards.Data) {
+			case 0:
+				lastSend = uint32(seat)
+				// allocate only once at first key
+				dummyCards.Data[lastSend] = *dummyHand
+			case 1:
+				delete(dummyCards.Data, lastSend)
+				lastSend = uint32(seat)
+				dummyCards.Data[lastSend] = *dummyHand
+			}
+			if conn == nil || conn.Conn.IsClosed() {
+				//DO log
+				slog.Warn("SendDummyCardsByExcludeDummy", utilog.Err(errors.New(fmt.Sprintf("%s斷線,或離開", CbSeat(seat)))))
+				continue
+			}
+			if err = mr.send(conn, eventName, payload); err != nil {
+				//DO log
+				slog.Error("SendDummyCardsByExcludeDummy", utilog.Err(err))
+			}
+		}
+	}
+	return
+}
+
 // SendPayloadsToPlayers 同時對遊戲中玩家發送訊息(payload)
 // 坑) 注意: 每個payload都要指定Player(表示要發給的對象), 重要 否則發不出去
 //
 //	Example: 假如夢家的牌要亮給另三家,則payloads中會有這三家(哪三家則是透過 payload.Player指定
+/*
+// memo 已廢棄: 向三家亮出夢家牌 (
+	g.roomManager.SendPayloadsToPlayers(ClnRoomEvents.GamePrivateShowHandToSeat,
+		payloadData{
+			ProtoData: &cb.PlayersCards{
+				  Seat: uint32(g.Dummy), //亮夢家牌
+				  Data: map[uint32][]uint8{
+				  uint32(g.Defender): g.deckInPlay[uint8(g.Dummy)][:], //向防家亮夢家
+				 },
+				},
+				 PayloadType: ProtobufType,
+				 Player:      uint8(g.Defender), //坑:不要忘了加上Player,否則直接送往東(zero value)
+				},
+				payloadData{
+				  ProtoData: &cb.PlayersCards{
+				  Seat: uint32(g.Dummy), //亮夢家牌
+				  Data: map[uint32][]uint8{
+				  uint32(g.Lead): g.deckInPlay[uint8(g.Dummy)][:], //向首引(防家)亮夢家
+				 },
+				},
+				 PayloadType: ProtobufType,
+				 Player:      uint8(g.Lead) //payload send target,
+				},
+				payloadData{
+				  ProtoData: &cb.PlayersCards{
+				  Seat: uint32(g.Dummy), //亮夢家牌
+				  Data: map[uint32][]uint8{
+				  uint32(g.Declarer): g.deckInPlay[uint8(g.Dummy)][:], //向莊家亮夢家
+				 },
+				},
+				 PayloadType: ProtobufType,
+				 Player:      uint8(g.Declarer),
+		 })
+*/
 func (mr *RoomManager) SendPayloadsToPlayers(eventName string, payloads ...payloadData) {
 
 	var (

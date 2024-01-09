@@ -1,6 +1,8 @@
 package game
 
 import (
+	"errors"
+	"fmt"
 	"log/slog"
 	"math/rand"
 
@@ -65,12 +67,6 @@ func (egn *Engine) ClearGameState() {}
 // memo DONE
 func (egn *Engine) ClearBiddingState() {
 	egn.bidHistory.Clear()
-	egn.currentPlay = valueNotSet
-	// TODO 清空 record
-	slog.Debug("ClearBiddingState", slog.Bool("清空還原競叫狀態", true))
-
-	//坑: 清空trumpSuit該在叫牌前執行
-	//egn.trumpRange = [2]uint8{club2,spadeAc}
 }
 
 // GameStartPlayInfo 競叫結束,以最後叫pass的玩家座位(lastPassSeat)為參數取得 leasSeat首引, declarerSeat莊家, dummySeat夢家, contractSuit王牌花, contract 合約紀錄(包含是否db,叫品線位)
@@ -81,6 +77,13 @@ func (egn *Engine) GameStartPlayInfo() (lead, declarer, dummy, suit uint8, contr
 		slog.Warn("GameStartPlayInfo", utilog.Err(err))
 		return lead, declarer, dummy, suit, contract, err
 	}
+
+	//重要: 設定引擎王牌
+	egn.trumpRange = GetTrumpRange(suit)
+	egn.currentPlay = lead
+	egn.declarer = CbSeat(declarer)
+	egn.dummy = CbSeat(dummy)
+
 	return lead, declarer, dummy, suit, contract, nil
 }
 
@@ -130,170 +133,210 @@ func (egn *Engine) GetNextBid(seat, bid uint8) (nextBiddingLimit uint8, db Doubl
 }
 
 /* ♣️♦️♥️♠️ ♣️♦️♥️♠️ ♣️♦️♥️♠️ ♣️♦️♥️♠️ ♣️♦️♥️♠️ ♣️♦️♥️♠️ ♣️♦️♥️♠️ ♣️♦️♥️♠️ ♣️♦️♥️♠️ ♣️♦️♥️♠️ ♣️♦️♥️♠️ */
-/*
- ==============================================以下是打牌================================================
-  TODO: 底下尚未重購
-*/
+
 // playOrder 從四家的出牌,找出第一個出牌者,及另外三家出牌
 // 傳入的牌 eastCard, southCard, westCard, northCard 都是不帶位置的
-func (egn *Engine) playOrder(eastCard, southCard, westCard, northCard uint8) (first uint8, flowers [3]uint8) {
-	/* 首出牌者找出打出哪一張牌
-	egn.locker.RLock()
-	defer egn.locker.RUnlock()
+func (egn *Engine) playOrder(eastCard, southCard, westCard, northCard uint8) (firstPlay uint8, flowerPlays [3]uint8) {
+	// 首出牌者找出打出哪一張牌
+	//egn.locker.RLock()
+	//defer egn.locker.RUnlock()
 
-	switch egn.currentPlay {
+	/*	switch CbSeat(egn.currentPlay) {
+		case east:
+			firstPlay = eastCard
+			flowerPlays[0] = southCard
+			flowerPlays[1] = westCard
+			flowerPlays[2] = northCard
+		case south:
+			firstPlay = southCard
+			flowerPlays[0] = eastCard
+			flowerPlays[1] = westCard
+			flowerPlays[2] = northCard
+		case west:
+			firstPlay = westCard
+			flowerPlays[0] = southCard
+			flowerPlays[1] = eastCard
+			flowerPlays[2] = northCard
+		case north:
+			firstPlay = northCard
+			flowerPlays[0] = southCard
+			flowerPlays[1] = westCard
+			flowerPlays[2] = eastCard
+		}
+	*/
+
+	switch CbSeat(egn.currentPlay) {
 	case east:
-		first = eastCard
-		flowers[0] = southCard
-		flowers[1] = westCard
-		flowers[2] = northCard
+		firstPlay = southCard
+		flowerPlays[0] = westCard
+		flowerPlays[1] = northCard
+		flowerPlays[2] = eastCard
 	case south:
-		first = southCard
-		flowers[0] = eastCard
-		flowers[1] = westCard
-		flowers[2] = northCard
+		firstPlay = westCard
+		flowerPlays[0] = northCard
+		flowerPlays[1] = eastCard
+		flowerPlays[2] = southCard
 	case west:
-		first = westCard
-		flowers[0] = southCard
-		flowers[1] = eastCard
-		flowers[2] = northCard
+		firstPlay = northCard
+		flowerPlays[0] = eastCard
+		flowerPlays[1] = southCard
+		flowerPlays[2] = westCard
 	case north:
-		first = northCard
-		flowers[0] = southCard
-		flowers[1] = westCard
-		flowers[2] = eastCard
+		firstPlay = eastCard
+		flowerPlays[0] = southCard
+		flowerPlays[1] = westCard
+		flowerPlays[2] = northCard
 	}
-	*/return
+	return
 }
 
 // playResultInTrump 叫品無王回合比牌
 func (egn *Engine) playResultInTrump(eastCard, southCard, westCard, northCard uint8) (winner uint8) {
-	/*	var (
-			first, flowers = egn.playOrder(eastCard, southCard, westCard, northCard)
-			loses          []uint8
-			playRange = GetRoundRangeByFirstPlay(first)
-		)
+	var (
+		first, flowers = egn.playOrder(eastCard, southCard, westCard, northCard)
+		loses          []uint8
+		playRange      = GetRoundRangeByFirstPlay(first)
+	)
+	win := first
 
-		win := first
-
-		for _, crd := range flowers {
-			switch {
-			case playRange[0] <= crd && crd <= playRange[1]:
-				if crd < win {
-					loses = append(loses, crd)
-					continue
-				}
-				loses = append(loses, win)
-				win = crd
-			default:
+	for _, crd := range flowers {
+		switch {
+		case playRange[0] <= crd && crd <= playRange[1]:
+			if crd < win {
 				loses = append(loses, crd)
+				continue
 			}
+			loses = append(loses, win)
+			win = crd
+		default:
+			loses = append(loses, crd)
 		}
+	}
 
-		switch win {
-		case eastCard:
-			winner = east
-		case southCard:
-			winner = south
-		case westCard:
-			winner = west
-		case northCard:
-			winner = north
-		}
-	*/
-	return uint8(0)
+	switch win {
+	case eastCard:
+		winner = uint8(east)
+	case southCard:
+		winner = uint8(south)
+	case westCard:
+		winner = uint8(west)
+	case northCard:
+		winner = uint8(north)
+	}
+
+	slog.Warn("無王回合比較大小",
+		utilog.Err(errors.New(
+			fmt.Sprint(fmt.Sprintf("min:%s ~ max: %s", CbCard(playRange[0]), CbCard(playRange[1])),
+				fmt.Sprintf("首打: %s ,  東: %s 南: %s  西: %s  北: %s  , 最後誰贏:%s",
+					CbCard(first),
+					CbCard(eastCard),
+					CbCard(southCard),
+					CbCard(westCard),
+					CbCard(northCard),
+					CbSeat(winner))))))
+
+	return winner
 }
 
 // playResultInSuit 叫品王牌回合比牌, 傳入的牌值都是不帶位置的 eastCard,southCard,westCard,northCard
 func (egn *Engine) playResultInSuit(eastCard, southCard, westCard, northCard uint8) (winner uint8) {
-	/*	var (
-			kings []uint8
-			loses []uint8
-			win   uint8
-		)
+	var (
+		kings []uint8
+		loses []uint8
+		win   uint8
+	)
 
-		for _, card := range [4]uint8{eastCard, southCard, westCard, northCard} {
-			if egn.trumpRange[0] <= card && card <= egn.trumpRange[1] {
-				kings = append(kings, card)
+	for _, card := range [4]uint8{eastCard, southCard, westCard, northCard} {
+		if egn.trumpRange[0] <= card && card <= egn.trumpRange[1] {
+			kings = append(kings, card)
+			continue
+		}
+		loses = append(loses, card)
+	}
+
+	if len(kings) == 1 {
+		//只有一張王,勝負已定
+		win = kings[0]
+
+	} else if len(kings) > 1 {
+		//多張王牌,必須比大小
+		win = kings[0]
+		for i := 1; i < len(kings); i++ {
+			if kings[i] < win {
+				loses = append(loses, kings[i])
 				continue
 			}
-			loses = append(loses, card)
+			loses = append(loses, win)
+			win = kings[i]
 		}
 
-		if len(kings) == 1 {
-			//只有一張王,勝負已定
-			win = kings[0]
+	} else {
+		//若都沒人出王牌
+		var (
+			first, flowers = egn.playOrder(eastCard, southCard, westCard, northCard)
+			playRange      = GetRoundRangeByFirstPlay(first)
+		)
 
-		} else if len(kings) > 1 {
-			//多張王牌,必須比大小
-			win = kings[0]
-			for i := 1; i < len(kings); i++ {
-				if kings[i] < win {
-					loses = append(loses, kings[i])
+		//先令win 為首打,在與他牌進行比較
+		win = first
+		for _, card := range flowers {
+			// 必須要與首打同一門
+			switch {
+			//card必須與首打在同一個區間
+			case playRange[0] <= card && card <= playRange[1]:
+				if card < win {
+					loses = append(loses, card)
 					continue
 				}
 				loses = append(loses, win)
-				win = kings[i]
-			}
-
-		} else {
-			//若都沒人出王牌
-			var (
-				first, flowers = egn.playOrder(eastCard, southCard, westCard, northCard)
-				playRange      = GetRoundRangeByFirstPlay(first)
-			)
-
-			//先令win 為首打,在與他牌進行比較
-			win = first
-			for _, card := range flowers {
-				// 必須要與首打同一門
-				switch {
-				//card必須與首打在同一個區間
-				case playRange[0] <= card && card <= playRange[1]:
-					if card < win {
-						loses = append(loses, card)
-						continue
-					}
-					loses = append(loses, win)
-					win = card
-				default:
-					loses = append(loses, card)
-				}
+				win = card
+			default:
+				loses = append(loses, card)
 			}
 		}
-		//找出winner
-		switch win {
-		case eastCard:
-			winner = east
-		case southCard:
-			winner = south
-		case westCard:
-			winner = west
-		case northCard:
-			winner = north
-		}
-		return
-	*/
-	return uint8(0)
+	}
+	//找出winner
+	switch win {
+	case eastCard:
+		winner = uint8(east)
+	case southCard:
+		winner = uint8(south)
+	case westCard:
+		winner = uint8(west)
+	case northCard:
+		winner = uint8(north)
+	}
+
+	slog.Warn("有王回合比較大小",
+		utilog.Err(errors.New(
+			fmt.Sprint(fmt.Sprintf("王牌範圍 %s ~ %s ", CbCard(egn.trumpRange[0]), CbCard(egn.trumpRange[1])),
+				fmt.Sprintf("東: %s 南: %s  西: %s  北: %s  , 最後誰贏:%s",
+					CbCard(eastCard),
+					CbCard(southCard),
+					CbCard(westCard),
+					CbCard(northCard),
+					CbSeat(winner))))))
+	return
 }
 
 // GetPlayResult winner是本回合贏方,同時也代表是下一位出牌座位(next seat for play)
 // 傳入的牌值都是不帶位置的 eastCard,southCard,westCard,northCard
-func (egn *Engine) GetPlayResult(eastCard, southCard, westCard, northCard uint8) (winner uint8) {
-	/*	switch CbSuit(egn.trumpSuit) {
-		case TRUMP:
-			winner = egn.playResultInTrump(eastCard, southCard, westCard, northCard)
-		default:
-			winner = egn.playResultInSuit(eastCard, southCard, westCard, northCard)
-		}
+func (egn *Engine) GetPlayResult(eastCard, southCard, westCard, northCard uint8, gameSuit CbSuit) (winner uint8) {
 
-		// winner為下一輪首打者
-		egn.locker.Lock()
-		egn.currentPlay = winner
-		egn.locker.Unlock()
-		return
-	*/
-	return uint8(0)
+	switch gameSuit {
+	case TRUMP:
+		winner = egn.playResultInTrump(eastCard, southCard, westCard, northCard)
+	default:
+		winner = egn.playResultInSuit(eastCard, southCard, westCard, northCard)
+	}
+
+	slog.Warn("回合結果", utilog.Err(errors.New(fmt.Sprint("FYI", fmt.Sprintf("王牌:%s  東: %s 南: %s  西: %s  北: %s  , 最後誰贏:%s", gameSuit, CbCard(eastCard), CbCard(southCard), CbCard(westCard), CbCard(northCard), CbSeat(winner))))))
+
+	// winner為下一輪首打者
+	//egn.locker.Lock()
+	egn.currentPlay = winner
+	//egn.locker.Unlock()
+	return
 }
 
 // GetGameResult 本局遊戲結果

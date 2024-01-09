@@ -3,7 +3,6 @@ package game
 //go:generate stringer -type=CbSeat,CbBid,CbCard,CbSuit,Track,CbRole,SeatStatusAndGameStart --linecomment -output cb32.enum_strings.go
 
 import (
-	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -12,18 +11,6 @@ import (
 	"github.com/moszorn/utils/skf"
 )
 
-// '\u2660', /*♠*/
-// '\u2661', /*♡*/
-// '\u2662', /*♢*/
-// '\u2663', /*♣*/
-// '\u2664', /*♤*/
-// '\u2665', /*♥*/
-// '\u2666', /*♦*/
-// '\u2667', /*♧*/
-
-/*
-System const
-*/
 const (
 
 	//RoomUsersLimit 一個房間容納人數限制
@@ -44,7 +31,7 @@ const (
 
 const (
 	// GamePlayCountDown 遊戲中,玩家叫/出牌時間, 未來(從DB撈取)依附在RoomUser中
-	GamePlayCountDown uint32 = 15
+	GamePlayCountDown uint32 = 3
 )
 
 type SeatStatusAndGameStart uint8
@@ -71,36 +58,24 @@ type (
 
 const (
 	RoleNotYet CbRole = iota //競叫尚未底定
-	Audience                 //👨‍👨‍👧‍👧
-	Defender                 // 🙅🏻‍♂️
-	Declarer                 // 🥷🏻
-	Dummy                    // 🙇🏼
+	Audience                 //觀眾
+	Defender                 //防家
+	Declarer                 //莊家
+	Dummy                    //夢家
 )
 
 // _e:east _s:south _w:west _n:north, enum CbSeat
 const (
-	//1個byte = 8個bit,扣除表符號得最高位元,2的7次方
-	//east  uint8 = 0x0      //0x00
-	//south uint8 = 0x1 << 6 //0x40
-	//west  uint8 = 0x2 << 6 //0x80
-	//north uint8 = 0x3 << 6 //0xC0
+	//east(0x0) south(0x40) west(0x80) north(0xC0)
 
 	east    CbSeat = iota << 6 //東
 	south                      //南
 	west                       //西
 	north                      //北
 	seatYet = 255              // 遊戲空位
-
-	//CbEast      = CbSeat(east)        //東
-	//CbSouth     = CbSeat(south)       //南
-	//CbWest      = CbSeat(west)        //西
-	//CbNorth     = CbSeat(north)       //北
-	//CbSeatEmpty = CbSeat(valueNotSet) //空位
 )
 
 // 儲存叫牌過程中最後由哪一方叫到王
-// 參考 biduint8.go - seatBiddingMapperSuit
-// 參考 gamengines.go - cacheBidHistories
 const (
 	CLUB     CbSuit = iota //♣️
 	DIAMOND                //♦️
@@ -113,91 +88,61 @@ const (
 	ZeroSuit               //
 )
 
-/*
-dartlang 中 enum表示
-//Poker
-/*
-    var club4 = Pok.C4;
-
-	enum Pok {
-		C1(x:0,y:12,v:0x1),
-		ST(x:20,y:28,v:0x27),
-		SJ(x:30,y:47,v:0x28),
-		SQ(x:43,y:22,v:0x29),
-		SK(x:53,y:18,v:0x2a),
-		SA(x:81,y:3,v:0x2b);
-
-	final int x; sprite圖片X座標
-	final int y; sprite圖片Y座標
-	final int v; 牌值
-
-	const Pok({required this.x,required this.y,required this.v });
-
-	static Pok parse(int value) {
-		switch(value) {
-		 case 0x1:
-		   return C1;
-		}
-		throw Exception('Unknown pok value');
-	  }
-	}
-*/
-
 // enum CbCard牌
 const (
 	BaseCover  CbCard = iota //🀫
-	Club2                    // ♣️2
-	Club3                    // ♣️3
-	Club4                    //♣️4
-	Club5                    // ♣️5
-	Club6                    // ♣️6
-	Club7                    // ♣️7
-	Club8                    // ♣️8
-	Club9                    // ♣️9
-	Club10                   // ♣️10
-	ClubJ                    //♣️J
-	ClubQ                    //♣️Q
-	ClubK                    //♣️K
-	ClubAce                  //♣️A
-	Diamond2                 //♦️2
-	Diamond3                 //♦️3
-	Diamond4                 //♦️4
-	Diamond5                 //♦️5
-	Diamond6                 //♦️6
-	Diamond7                 //♦️7
-	Diamond8                 //♦️8
-	Diamond9                 //♦️9
-	Diamond10                //♦️10
-	DiamondJ                 //♦️J
-	DiamondQ                 //♦️Q
-	DiamondK                 //♦️K
-	DiamondAce               //♦️A
-	Heart2                   //♥️2
-	Heart3                   //♥️3
-	Heart4                   //♥️4
-	Heart5                   //♥️5
-	Heart6                   //♥️6
-	Heart7                   //♥️7
-	Heart8                   //♥️8
-	Heart9                   //♥️9
-	Heart10                  //♥️10
-	HeartJ                   //♥️J
-	HeartQ                   //♥️Q
-	HeartK                   //♥️K
-	HeartAce                 //♥️A
-	Spade2                   //♠️2
-	Spade3                   //♠️3
-	Spade4                   //♠️4
-	Spade5                   //♠️5
-	Spade6                   //♠️6
-	Spade7                   //♠️7
-	Spade8                   //♠️8
-	Spade9                   //♠️9
-	Spade10                  //♠️10
-	SpadeJ                   //♠️J
-	SpadeQ                   //♠️Q
-	SpadeK                   //♠️K
-	SpadeAce                 //♠️A
+	Club2                    // ♣️ 2
+	Club3                    // ♣️ 3
+	Club4                    //♣️ 4
+	Club5                    // ♣️ 5
+	Club6                    // ♣️ 6
+	Club7                    // ♣️ 7
+	Club8                    // ♣️ 8
+	Club9                    // ♣️ 9
+	Club10                   // ♣️ 10
+	ClubJ                    //♣️ J
+	ClubQ                    //♣️ Q
+	ClubK                    //♣️ K
+	ClubAce                  //♣️ A
+	Diamond2                 //♦️ 2
+	Diamond3                 //♦️ 3
+	Diamond4                 //♦️ 4
+	Diamond5                 //♦️ 5
+	Diamond6                 //♦️ 6
+	Diamond7                 //♦️ 7
+	Diamond8                 //♦️ 8
+	Diamond9                 //♦️ 9
+	Diamond10                //♦️ 10
+	DiamondJ                 //♦️ J
+	DiamondQ                 //♦️ Q
+	DiamondK                 //♦️ K
+	DiamondAce               //♦️ A
+	Heart2                   //♥️ 2
+	Heart3                   //♥️ 3
+	Heart4                   //♥️ 4
+	Heart5                   //♥️ 5
+	Heart6                   //♥️ 6
+	Heart7                   //♥️ 7
+	Heart8                   //♥️ 8
+	Heart9                   //♥️ 9
+	Heart10                  //♥️ 10
+	HeartJ                   //♥️ J
+	HeartQ                   //♥️ Q
+	HeartK                   //♥️ K
+	HeartAce                 //♥️ A
+	Spade2                   //♠️ 2
+	Spade3                   //♠️ 3
+	Spade4                   //♠️ 4
+	Spade5                   //♠️ 5
+	Spade6                   //♠️ 6
+	Spade7                   //♠️ 7
+	Spade8                   //♠️ 8
+	Spade9                   //♠️ 9
+	Spade10                  //♠️ 10
+	SpadeJ                   //♠️ J
+	SpadeQ                   //♠️ Q
+	SpadeK                   //♠️ K
+	SpadeAce                 //♠️ A
 )
 
 // zeroBid 初始叫品表示開叫時叫品的值
@@ -295,6 +240,21 @@ const (
 	_FindPlayer                        //請求找尋指定玩家連線
 	_GetTableInfo                      //請求取得房間觀眾,空位起點依序的玩家座位
 )
+
+// GetPartnerByPlayerSeat 以玩家座位,取得夥伴座位
+func GetPartnerByPlayerSeat(seat uint8) (uint8, CbSeat) {
+	switch CbSeat(seat) {
+	case east:
+		return uint8(west), west
+	case south:
+		return uint8(north), north
+	case west:
+		return uint8(east), east
+	case north:
+		return uint8(south), south
+	}
+	return uint8(seatYet), seatYet
+}
 
 /*
  pb 與 DDD entity 整合
@@ -458,38 +418,19 @@ var (
 	TrumpRange   = *(&NKings)
 )
 
-/* 已被 GetTrumpRange取代
-func TrumpCardRange(trump uint8) CardRange {
-	switch CbSuit(seatBiddingMapperSuit[trump]) {
-	case CLUB:
-		return CKings
-	case DIAMOND:
-		return DKings
-	case HEART:
-		return HKings
-	case SPADE:
-		return SKings
-	case TRUMP:
-		return NKings
-	case PASS:
-	case DOUBLE:
-	case REDOUBLE:
-	}
-	return [2]uint8{0x0, 0x0}
-}*/
-
 // GetTrumpRange 合約底定後,以合約Suit獲取遊戲王牌範圍 (取代 TrumpCardRange)
 func GetTrumpRange(contractSuit uint8) CardRange {
-	switch CbSuit(seatBiddingMapperSuit[contractSuit]) {
-	case CLUB:
+	//switch CbSuit(seatBiddingMapperSuit[contractSuit]) {
+	switch CbSuit(contractSuit) {
+	case CLUB: //0
 		return CKings
-	case DIAMOND:
+	case DIAMOND: //1
 		return DKings
-	case HEART:
+	case HEART: //2
 		return HKings
-	case SPADE:
+	case SPADE: //3
 		return SKings
-	case TRUMP:
+	case TRUMP: //4
 		return NKings
 	default: /*PASS, DOUBLE, REDOUBLE*/
 		//這裡應該永遠都不可能執行到
@@ -504,121 +445,20 @@ func GetRoundRangeByFirstPlay(firstPlay uint8) CardRange {
 	//模擬四家的出牌
 	// first首打
 	var first = CbCard(firstPlay)
-	fmt.Printf("first Play: %08b %[1]d  %[1]s\n", first)
 
 	switch {
 	case first < Diamond2:
-		fmt.Printf("hit range: Club[%08b ~ %08b]\n", Club2, ClubAce)
 		return ClubRange
 	case ClubAce < first && first < Heart2:
-		fmt.Printf("hit range: Diamond[%08b ~ %08b]\n", Diamond2, DiamondAce)
 		return DiamondRange
 	case DiamondAce < first && first < Spade2:
-		fmt.Printf("hit range: Heart[%08b ~ %08b]\n", Heart2, HeartAce)
 		return HeartRange
 	case HeartAce < first && first <= SpadeAce:
-		fmt.Printf("hit range: Spade[%08b ~ %08b]\n", Spade2, SpadeAce)
 		return SpadeRange
 	default:
 	}
 	return [2]uint8{club2, spadeAce}
 }
-
-// RoundSuitKeep 紀錄該回合能出的牌範圍, 本局贏家執行ReNewKeeper,直到client送來該玩家打出的牌 DoKeep,所有玩家可出的牌被限定於RoundSuitKeep
-type RoundSuitKeep struct {
-	Player    uint8     //keep 持續等待該玩家下一次出牌
-	CardRange CardRange //當該玩家(Player)出牌時,依照所出的牌(Suit)找出可出牌最大最小範圍
-	Min       uint8     // 最小可出牌
-	Max       uint8     //最大可出牌
-	IsSet     bool      //是否已經設定要keep的seat
-}
-
-// NewRoundSuitKeep 每個可出牌回合的第一個Play執行
-func NewRoundSuitKeep(firstPlay uint8) *RoundSuitKeep {
-	return &RoundSuitKeep{
-		Player:    firstPlay,
-		CardRange: [2]uint8{club2, spadeAce},
-		IsSet:     true,
-		Min:       0,
-		Max:       0,
-	}
-}
-
-/* 使用 RoundSuitKeep 順序依須說明
-1. NewRoundSuitKeep 首引時建立 Keeper (參考:game.go:BidMux.NewRoundSuitKeep)
-2. 首引打出牌後, DoKeep只會紀錄首引打出的Suit
-3. 其他玩家持續DoKeep都不會被紀錄 (參考: game.go:PlayMux)
-4. 以當前Keep紀錄的suit來設定下一個玩家能打出的牌(因為前端會需要用來判斷是否可以double click out)
-5. 回合結束比較輸贏後,以本回合贏者重新設定下一輪的RoundSuitKeep
-6. 上一輪贏者打出第一張牌後, DoKeep只會紀錄他打出的Suit
-7. 其他玩家持續DoKeep都不會被紀錄
-8. 持續以當前Keep紀錄的suit來設定下一個玩家能打出的牌(因為前端會需要用來判斷是否可以double click out)
-9. 遊戲結束比較輸贏後,將RoundSuitKeep設定為nil,直到下一輪叫品王牌出來,首引決定時 NewRoundSuitKeep會再一次被執行
-*/
-
-// DoKeep 傳入打牌者,打什麼牌,若出牌者是keeper則算出range並紀錄
-func (r *RoundSuitKeep) DoKeep(seat, card uint8) error {
-	if !r.IsSet {
-		return errors.New("RoundSuitKeep尚未設定")
-	}
-	if seat != r.Player {
-		//不是首打出牌玩家,回傳return不記
-		return nil
-	}
-
-	r.CardRange = GetRoundRangeByFirstPlay(card)
-	r.Min = r.CardRange[0]
-	r.Max = r.CardRange[1]
-	return nil
-}
-
-// ReNewKeeper 更換玩家, valueNotSet是 zeroValue
-func (r *RoundSuitKeep) ReNewKeeper(seat uint8) {
-	r.Player = seat
-	r.IsSet = true
-	r.Min = club2
-	r.Max = spadeAce
-}
-
-// AllowCardsByRoundSuitKeep cards玩家當前手上持牌(cards),allows 玩家下次可出的牌(allows)
-// 玩家可打出的牌,是依據回合先出牌的suit決定
-// 情境:
-//  0. 必須以首打出牌的Suit為依據,首打打出麼suit,就要跟打什麼suit.
-//  1. 若手上持牌無可出的suit,可打王牌,可打任何張墊牌
-//     必須知道:
-func (r *RoundSuitKeep) AllowCardsByRoundSuitKeep(cards *[13]uint8) []uint8 {
-	//找出未標示 game.BaseCover表示玩家尚未出過牌
-
-	//符合回合首打花色
-	normalSuits := make([]uint8, 0, 13)
-	//不符合首打花色
-	abnormalSuits := make([]uint8, 0, 13)
-
-	for i := range cards {
-		if cards[i] == uint8(BaseCover) {
-			continue
-		}
-		if r.Min <= cards[i] && r.Max >= cards[i] {
-			normalSuits = append(normalSuits, cards[i])
-		}
-		abnormalSuits = append(abnormalSuits, cards[i])
-	}
-	if len(normalSuits) != 0 {
-		return normalSuits
-	}
-	return abnormalSuits
-}
-
-//gamengine.trumpRange
-// GetRoundRangeByFirstPlay(firstHand uint8) CardRange
-/*
-	switch game.CbSuit(c.trumpSuit) {
-	case game.TRUMP:
-		winner = c.playResultInTrump(eastCard, southCard, westCard, northCard)
-	default:
-		winner = c.playResultInSuit(eastCard, southCard, westCard, northCard)
-	}
-*/
 
 /*
 //dartlang中的叫品

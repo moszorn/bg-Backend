@@ -2,7 +2,6 @@ package game
 
 import (
 	"errors"
-	"fmt"
 	"time"
 )
 
@@ -227,7 +226,7 @@ func (h *bidHistory) GameStartPlayInfo() (lead, declarer, dummy, contractSuit ui
 		declarer = partner
 		dummy = contract.who()
 	}
-	fmt.Printf("GameStartPlayInfo: bidder:%s bid:%s isDb:%t\n", contract.bidder, contract.value, contract.isDouble())
+	//fmt.Printf("GameStartPlayInfo: bidder:%s bid:%s isDb:%t\n", contract.bidder, contract.value, contract.isDouble())
 	return
 }
 

@@ -198,7 +198,7 @@ func (rooms AllRoom) GamePrivateCardPlayClick(ns *skf.NSConn, m skf.Message) err
 		return er
 	}
 	//g.PlayerLeave(u)
-	slog.Info("入口(GameCardPlayClick)",
+	slog.Info("入口(GamePrivateCardPlayClick)",
 		slog.String("FYI",
 			fmt.Sprintf("%s(%s) 打出 %s  %s  ", u.Name, game.CbSeat(u.Zone8), game.CbSeat(u.PlaySeat8), game.CbCard(u.Play8))))
 
@@ -274,73 +274,6 @@ func (rooms AllRoom) GamePrivateCardHover(ns *skf.NSConn, m skf.Message) error {
 
 
  */
-
-// competitiveBidding todo 玩家叫牌(包含叫到第幾線,什麼叫品,誰叫的)
-func (rooms AllRoom) competitiveBidding(ns *skf.NSConn, m skf.Message) error {
-	var (
-		srv = rooms[m.Room]
-		//原來的code
-		//seat8  = uint8(ns.Conn.Get(game.KeySeat).(game.CbSeat))
-
-		//改過的code
-		seat8  = uint8(ns.Conn.Get(game.KeyZone).(game.CbSeat))
-		value8 uint8
-		raw8   uint8
-	)
-	if len(m.Body) == 0 {
-		err := errors.New("空叫品")
-		slog.Error("競叫competitiveBidding", utilog.Err(err))
-		return err
-	}
-
-	value8 = m.Body[0] //CbBid
-	raw8 = value8 | seat8
-
-	slog.Debug("競叫competitiveBidding",
-		slog.String("房間", m.Room),
-		slog.String("叫者", fmt.Sprintf("%s", game.CbSeat(seat8))),
-		slog.String("叫者seat", fmt.Sprintf("0x%0X", seat8)),
-		slog.String("叫品", fmt.Sprintf("%s", game.CbBid(value8))),
-		slog.Int("叫品8", int(value8)),
-		slog.String("叫品|叫者", fmt.Sprintf("0x%X", raw8)))
-
-	go srv.BidMux(seat8, value8)
-	return nil
-}
-
-func (rooms AllRoom) competitivePlaying(ns *skf.NSConn, m skf.Message) error {
-	var (
-		srv = rooms[m.Room]
-
-		//Store Role於競叫底定時決定
-		role   = ns.Conn.Get(game.KeyPlayRole).(game.CbRole)
-		seat8  uint8 //牌真實持有者
-		value8 uint8
-	)
-
-	payload := cb.PlayingCard{}
-	err := pb.Unmarshal(m.Body, &payload)
-	if err != nil {
-		slog.Error("玩牌中competitivePlaying", utilog.Err(err))
-		panic(err)
-	}
-
-	value8 = uint8(payload.CardValue)
-	seat8 = uint8(payload.Seat)
-
-	slog.Debug("❖❖❖❖❖❖❖❖❖❖❖❖❖❖❖❖❖❖❖❖❖❖❖❖❖❖❖❖❖❖❖❖❖❖❖❖❖❖❖❖❖❖❖❖❖❖❖❖❖❖❖❖❖❖❖❖❖❖❖❖❖❖❖❖")
-	slog.Debug("玩牌中competitivePlaying",
-		slog.String("房間", m.Room),
-		slog.String("玩家", fmt.Sprintf("%s", role)),
-		slog.String("座位", fmt.Sprintf("%s", game.CbSeat(seat8))),
-		slog.String("seat8(Hex)", fmt.Sprintf("0x%X", seat8)),
-		slog.String("seat8(Dec)", fmt.Sprintf("%d", seat8)),
-		slog.String("牌", fmt.Sprintf("%s", game.CbCard(value8))))
-
-	go srv.PlayMux(role, seat8, value8)
-	return nil
-}
-
 // callBackStoreConnectionRole 當競叫底定後,會送出訊號給各家client,各家client會回乎這個method對connection進行遊戲角色設定
 // 用於設定與清除
 func (rooms AllRoom) callBackStoreConnectionRole(ns *skf.NSConn, m skf.Message) error {
