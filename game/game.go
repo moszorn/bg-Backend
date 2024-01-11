@@ -405,7 +405,7 @@ func (g *Game) GamePrivateNotyBid(currentBidder *RoomUser) {
 			//通知首引為下一個出牌者,並開啟其首引gauge與call back
 			leadNotice := new(cb.PlayNotice)
 			leadNotice.Seat = uint32(lead)
-			leadNotice.CardMinValue, leadNotice.CardMaxValue, leadNotice.TimeoutCardValue, _ = g.AvailablePlayerPlayRange(lead, false)
+			leadNotice.CardMinValue, leadNotice.CardMaxValue, leadNotice.TimeoutCardValue, _ = g.AvailablePlayerPlayRange(lead, true)
 			leadNotice.NumOfCardPlayHitting = uint32(1) // 首引為第一次點擊
 			payload.ProtoData = leadNotice
 			payload.Player = lead                                                          //傳給首引玩家                                                      //指定傳送給 bidder 開叫
@@ -427,7 +427,6 @@ func (g *Game) GamePrivateNotyBid(currentBidder *RoomUser) {
 		2) 若找不到,則從deckInPlay第一張打出
 */
 func (g *Game) GamePrivateFirstLead(leadPlayer *RoomUser) error {
-
 	if leadPlayer.Zone8 != uint8(g.Lead) {
 		slog.Warn("首引出牌", slog.String("FYI", fmt.Sprintf("首引應為%s, 但引牌方為%s", g.Lead, CbSeat(leadPlayer.Zone8))))
 		return nil //by pass
@@ -463,19 +462,21 @@ func (g *Game) GamePrivateFirstLead(leadPlayer *RoomUser) error {
 		//  莊家 -    seat: leadPlayer.Zone, NextSeat: nextRealPlaySeat
 
 		coverCardAction = &cb.CardAction{
-			Type:        cb.CardAction_play,
-			CardValue:   leadPlayer.Play,
-			Seat:        leadPlayer.Zone,          /*停止的Gauge*/
-			NextSeat:    uint32(nextRealPlaySeat), /*下一家Gauge 夢家,但實際是莊家 (設定gauge)*/
-			IsCardCover: true,                     /*蓋牌打出*/
+			Type:          cb.CardAction_play,
+			CardValue:     leadPlayer.Play,
+			Seat:          leadPlayer.Zone,          /*停止的Gauge*/
+			NextSeat:      uint32(nextRealPlaySeat), /*下一家Gauge 夢家,但實際是莊家 (設定gauge)*/
+			IsCardCover:   true,                     /*蓋牌打出*/
+			PlaySoundName: g.engine.GetCardSound(leadPlayer.Play8),
 		}
 		faceCardAction = &cb.CardAction{
 			AfterPlayCards: refresh, /*出牌後首引重整牌組*/
 			Type:           cb.CardAction_play,
-			CardValue:      leadPlayer.Play,          // 因為已經打出所以..
-			Seat:           leadPlayer.Zone,          /*停止的Gauge*/
-			NextSeat:       uint32(nextRealPlaySeat), /*下一家Gauge, 夢家,但實際是莊家 (設定gauge)*/
-			IsCardCover:    false,                    /*明牌打出*/
+			CardValue:      coverCardAction.CardValue, // 因為已經打出所以..
+			Seat:           coverCardAction.Seat,      /*停止的Gauge*/
+			NextSeat:       coverCardAction.NextSeat,  /*下一家Gauge, 夢家,但實際是莊家 (設定gauge)*/
+			IsCardCover:    false,                     /*明牌打出*/
+			PlaySoundName:  coverCardAction.PlaySoundName,
 		}
 		//三家UI收到蓋牌出牌
 		commonPayload = payloadData{
@@ -768,6 +769,7 @@ func (g *Game) GamePrivateCardPlayClick(clickPlayer *RoomUser) error {
 			Seat:           clickPlayer.PlaySeat,
 			NextSeat:       uint32(nextPlayer), /*由上面判斷isLastPlay來決定*/
 			IsCardCover:    false,              /*後面決定,莊打夢,莊打莊,防打防*/
+			PlaySoundName:  g.engine.GetCardSound(clickPlayer.Play8),
 		}
 		// CONVENTION: ca2 通常用於沒有refresh, 暗牌回覆
 		ca2 = &cb.CardAction{
@@ -777,6 +779,7 @@ func (g *Game) GamePrivateCardPlayClick(clickPlayer *RoomUser) error {
 			Seat:           ca1.Seat,
 			NextSeat:       ca1.NextSeat,
 			IsCardCover:    true, /*後面決定,莊打夢,莊打莊,防打防*/
+			PlaySoundName:  ca1.PlaySoundName,
 		}
 		payload1 = payloadData{
 			PayloadType: ProtobufType,
