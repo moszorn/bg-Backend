@@ -846,12 +846,12 @@ func (mr *RoomManager) SendGameStart() (lead, bid uint8) {
 	//第八個參數: 一線ReDouble 開啟 (0:表示disable)
 	//   參考: GamePrivateNotyBid
 	notyBid := cb.NotyBid{
-		Bidder:     uint32(lead),
-		BidStart:   uint32(bid),
-		LastBidder: uint32(valueNotSet), /*一定設,否則前端gauge無法判斷要停止的zone*/
-		Double1:    uint32(Db1),
-		Double2:    uint32(Db2),
-		Btn:        cb.NotyBid_disable_all,
+		Bidder:   uint32(lead),
+		BidStart: uint32(bid),
+		//LastBidder: uint32(valueNotSet),
+		Double1: uint32(Db1),
+		Double2: uint32(Db2),
+		Btn:     cb.NotyBid_disable_all,
 	}
 
 	payload.ProtoData = &notyBid

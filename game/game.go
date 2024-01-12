@@ -221,6 +221,12 @@ func (g *Game) SetGamePlayInfo(declarer, dummy, firstLead, kingSuit uint8) {
 //
 func (g *Game) GamePrivateNotyBid(currentBidder *RoomUser) {
 
+	//一被點擊,就停止四家正在執行的gauge
+	err := g.roomManager.SendPayloadToPlayers(ClnRoomEvents.GameOP, &pb.OP{Type: pb.SceneType_game_gauge_stop}, pb.SceneType_game)
+	if err != nil {
+		slog.Warn("斷線", utilog.Err(err))
+	}
+
 	nextLimitBidding, db1, db2 := g.engine.GetNextBid(currentBidder.Zone8, currentBidder.Bid8)
 
 	complete, needReBid := g.engine.IsBidFinishedOrReBid()
@@ -243,7 +249,6 @@ func (g *Game) GamePrivateNotyBid(currentBidder *RoomUser) {
 		notyBid := cb.NotyBid{
 			Bidder:         uint32(next),
 			BidStart:       uint32(nextLimitBidding),
-			LastBidder:     uint32(currentBidder.Zone8),
 			LastBidderName: fmt.Sprintf("%s-%s", CbSeat(currentBidder.Zone8), currentBidder.Name),
 			LastBid:        fmt.Sprintf("%s", CbBid(currentBidder.Bid8)),
 			Double1:        uint32(db1.value),
@@ -305,9 +310,8 @@ func (g *Game) GamePrivateNotyBid(currentBidder *RoomUser) {
 			*/
 
 			notyBid := cb.NotyBid{
-				Bidder:     uint32(bidder),
-				BidStart:   uint32(valueNotSet), /* 坑:重新競叫前端使用ValueNotSet重新叫訊號*/
-				LastBidder: uint32(currentBidder.Zone8),
+				Bidder:   uint32(bidder),
+				BidStart: uint32(valueNotSet), /* 坑:重新競叫前端使用ValueNotSet重新叫訊號*/
 				//LastBidderName: fmt.Sprintf("%s-%s", CbSeat(currentBidder.Zone8), currentBidder.Name),
 				//LastBid:        fmt.Sprintf("%s", CbBid(currentBidder.Bid8)),
 				Double1: uint32(db1.value),
@@ -451,7 +455,6 @@ func (g *Game) GamePrivateFirstLead(leadPlayer *RoomUser) error {
 			IsPlayAgent:          isAgentPlay,                  /*若為莊打夢,則前端要修正seat為封包發送者(nextRealPlaySeat)*/
 			Dummy:                uint32(g.Dummy),              /*前端若 IsPlayAgent為 true, 必須以 Dummy為 View (莊家要開啟夢家View)*/
 			Seat:                 uint32(nextRealPlaySeat),     /*夢家,但實際是莊家 (設定gauge)*/
-			PreviousSeat:         leadPlayer.PlaySeat,          /*停止首引的gauge*/
 			NumOfCardPlayHitting: firstPlayHitting + uint32(1), /*下一次點擊應為2*/
 		}
 
@@ -711,7 +714,6 @@ func (g *Game) GamePrivateCardPlayClick(clickPlayer *RoomUser) error {
 		nextRealPlaySeat uint8                  //實際上下一個出牌者
 		// 發送給判斷 isLastPlay後的 nextRealPlaySeat
 		nextPlayNotice = &cb.PlayNotice{
-			PreviousSeat:         clickPlayer.Zone, /*因為已經不用夢家gauge,所以不會是PlaySeat*/
 			NumOfCardPlayHitting: clickPlayer.NumOfCardPlayHitting + uint32(1),
 			IsPlayAgent:          false, /*下面playTurn判斷式判斷後設定*/
 		}
@@ -743,9 +745,8 @@ func (g *Game) GamePrivateCardPlayClick(clickPlayer *RoomUser) error {
 
 	slog.Debug("NextNotice",
 		slog.String("FYI",
-			fmt.Sprintf("新回合:%t 上一個玩家: %s , 下一個玩家 %s 是否代理(%t), 實際出牌: %s ,出牌範圍: %s  ~ %s  , 自動出牌: %s ",
+			fmt.Sprintf("新回合:%t  下一個玩家 %s 是否代理(%t), 實際出牌: %s ,出牌範圍: %s  ~ %s  , 自動出牌: %s ",
 				isLastPlay,
-				CbSeat(nextPlayNotice.PreviousSeat),
 				CbSeat(nextPlayNotice.Seat),
 				nextPlayNotice.IsPlayAgent,
 				CbSeat(nextRealPlaySeat),
@@ -894,6 +895,7 @@ func (g *Game) GamePrivateCardPlayClick(clickPlayer *RoomUser) error {
 		for idx := range sendPayloadsFuncsByIsLastPlay {
 			sendPayloadsFuncsByIsLastPlay[idx]()
 		}
+
 		//通知下一位出牌
 		g.nextPlayNotification(nextPlayNotice, nextRealPlaySeat)
 
@@ -916,7 +918,8 @@ func (g *Game) GamePrivateCardPlayClick(clickPlayer *RoomUser) error {
 			for idx := range sendPayloadsFuncsByIsLastPlay {
 				sendPayloadsFuncsByIsLastPlay[idx]()
 			}
-			time.Sleep(time.Millisecond * 500)
+			time.Sleep(time.Millisecond * 700)
+
 			//TODO: 送出清除桌面打出的牌,準備下一輪開始
 			err := g.roomManager.SendPayloadToPlayers(ClnRoomEvents.GameOP, &pb.OP{Type: pb.SceneType_game_round_clear}, pb.SceneType_game)
 			if err != nil {
@@ -924,8 +927,10 @@ func (g *Game) GamePrivateCardPlayClick(clickPlayer *RoomUser) error {
 				panic(err)
 				//廣播有人GG
 			}
+
+			//避免玩家快速再次點擊下一張出牌,導致前端螢幕還沒開始清除上一回合桌面,發生不必要的頁面問題
 			//下一輪首打通知
-			//time.Sleep(time.Second * 1)
+			time.Sleep(time.Millisecond * 500) // 重要 的延遲時間,到時候上時還要再加上網路傳輸的延遲
 			g.nextPlayNotification(nextPlayNotice, nextRealPlaySeat)
 		}
 	}

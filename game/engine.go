@@ -339,11 +339,12 @@ func (egn *Engine) GetPlayResult(eastCard, southCard, westCard, northCard uint8,
 	return
 }
 
+// IsTrumpCard 牌(card)是否是該局王牌
 func (egn *Engine) IsTrumpCard(card uint8) bool {
-	fmt.Printf("card: %d  egn.trumpRange[0]: %d  [1]:%d\n", card, egn.trumpRange[0], egn.trumpRange[1])
 	return egn.trumpRange[0] <= card && card <= egn.trumpRange[1]
 }
 
+// GetCardSound 回傳此牌(card)的音效 (王牌音效字串或一般音效字串)
 func (egn *Engine) GetCardSound(card uint8) string {
 	//參考前端: get_asset.dart - SoundAsset
 	if egn.IsTrumpCard(card) {
