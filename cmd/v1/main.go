@@ -33,10 +33,14 @@ var (
 
 func init() {
 	runtime.GOMAXPROCS(cpuNum)
+
 	slog.Info("cpu核心數", slog.Int("Core", cpuNum))
 }
 
 func main() {
+
+	//utilog.SetConsoleLog(os.Stdout, slog.LevelDebug)
+
 	slog.Debug("錯誤訊息測試", utilog.Err(errors.New("hello world")))
 
 	ctx := context.WithValue(context.Background(), "pid", pid)
@@ -44,12 +48,19 @@ func main() {
 	ctrl := make(chan os.Signal)
 	signal.Notify(ctrl, os.Kill, os.Interrupt)
 
+	//------------- Log Setting
+	logCtx, logCancel := context.WithCancel(context.Background())
+	utilog.SetFileLog(logCtx, slog.LevelInfo)
+	//-----------------------------
+
 	// 初始Namespace,使得skf可以被生成
 	project.InitProject(ctx)
 
 	go gameServerStart()
 
 	<-ctrl
+	logCancel()
+	time.Sleep(time.Second)
 
 	err := exec.Command("kill", pid, "-9", "-v").Start()
 
