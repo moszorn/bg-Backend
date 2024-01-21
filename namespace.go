@@ -5,6 +5,7 @@ import (
 	"log/slog"
 
 	"github.com/moszorn/pb/cb"
+	llg "github.com/moszorn/utils/log"
 	"github.com/moszorn/utils/skf"
 
 	"project/game"
@@ -98,9 +99,11 @@ func initNamespace(pid context.Context) {
 		tables[cbGameRooms[idx]] = nil
 	}
 
+	mylog := llg.NewMyLog("app.log", slog.LevelDebug, llg.ConsoleLog)
+
 	counterService = NewCounterService(&tables)
 
-	roomSpaceService = NewRoomSpaceService(pid, &rooms, counterService)
+	roomSpaceService = NewRoomSpaceService(pid, &rooms, counterService, mylog)
 
 	lobbySpaceService = NewLobbySpaceService()
 

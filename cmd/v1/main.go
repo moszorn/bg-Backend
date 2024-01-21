@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"errors"
 	"log/slog"
 	"net/http"
 	"os"
@@ -16,7 +15,6 @@ import (
 
 	"github.com/kataras/neffos"
 
-	utilog "github.com/moszorn/utils/log"
 	"github.com/moszorn/utils/skf"
 	"github.com/moszorn/utils/skf/gobwas"
 
@@ -41,17 +39,13 @@ func main() {
 
 	//utilog.SetConsoleLog(os.Stdout, slog.LevelDebug)
 
-	slog.Debug("錯誤訊息測試", utilog.Err(errors.New("hello world")))
+	// 寫入檔案
+	//	my := llg.NewMyLog(slog.LevelDebug, log.FileLog)
 
 	ctx := context.WithValue(context.Background(), "pid", pid)
 
 	ctrl := make(chan os.Signal)
 	signal.Notify(ctrl, os.Kill, os.Interrupt)
-
-	//------------- Log Setting
-	logCtx, logCancel := context.WithCancel(context.Background())
-	utilog.SetFileLog(logCtx, slog.LevelInfo)
-	//-----------------------------
 
 	// 初始Namespace,使得skf可以被生成
 	project.InitProject(ctx)
@@ -59,7 +53,6 @@ func main() {
 	go gameServerStart()
 
 	<-ctrl
-	logCancel()
 	time.Sleep(time.Second)
 
 	err := exec.Command("kill", pid, "-9", "-v").Start()
@@ -67,7 +60,7 @@ func main() {
 	slog.Info("Shut Down Contract Bridge Game", slog.String("pid", pid))
 
 	if err != nil {
-		slog.Error("kill process fail", utilog.Err(err), slog.String("pid", pid))
+		slog.Error("kill process fail", slog.String("err", err.Error()), slog.String("pid", pid))
 	}
 }
 
@@ -88,7 +81,7 @@ func gameServerStart() {
 	slog.Debug("Ctrl-C中斷Server執行")
 	err := http.ListenAndServe(endPort, server)
 	if err != nil {
-		slog.Error("server 啟動失敗", utilog.Err(err))
+		slog.Error("server 啟動失敗", slog.String("err", err.Error()))
 	}
 
 }

@@ -92,6 +92,10 @@ github.com/moszorn/utils v0.0.0-20240120040806-25edc8ccba3f h1:E0fuatQrhw4l6dxZq
 github.com/moszorn/utils v0.0.0-20240120040806-25edc8ccba3f/go.mod h1:2UUcEk1rjwMuyjxEOI6QnzuaHp+IYgAwbUWzBHsvHs4=
 github.com/moszorn/utils v0.0.0-20240120042249-e977d266ec23 h1:HEIfiWCGxxE7Sz5IztR30nkxKvOl/CJWT4iybWb41IA=
 github.com/moszorn/utils v0.0.0-20240120042249-e977d266ec23/go.mod h1:2UUcEk1rjwMuyjxEOI6QnzuaHp+IYgAwbUWzBHsvHs4=
+github.com/moszorn/utils v0.0.0-20240121133458-7bbf040f20af h1:MpBm0ZxNh7f5oENZaIBeExoV8Ge+3iMDbd8UNGY9VLQ=
+github.com/moszorn/utils v0.0.0-20240121133458-7bbf040f20af/go.mod h1:2UUcEk1rjwMuyjxEOI6QnzuaHp+IYgAwbUWzBHsvHs4=
+github.com/moszorn/utils v0.0.0-20240121150744-db0c1c34b6c2 h1:SqU9GAybBzCsqGH+EEa1W/c9JyI9x5QLaUdfD5Aqupg=
+github.com/moszorn/utils v0.0.0-20240121150744-db0c1c34b6c2/go.mod h1:2UUcEk1rjwMuyjxEOI6QnzuaHp+IYgAwbUWzBHsvHs4=
 golang.org/x/sys v0.6.0 h1:MVltZSvRTcU2ljQOhs94SXPftV6DCNnZViHeQps87pQ=
 golang.org/x/sys v0.6.0/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
 golang.org/x/xerrors v0.0.0-20191204190536-9bdfabe68543/go.mod h1:I/5z698sn9Ka8TeJc9MKroUUfqBBauWjQqLJ2OPfmY0=

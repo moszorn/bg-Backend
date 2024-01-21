@@ -1,12 +1,9 @@
 package game
 
 import (
-	"errors"
 	"fmt"
 	"log/slog"
 	"math/rand"
-
-	utilog "github.com/moszorn/utils/log"
 )
 
 // 隨機開叫產出 TODO:
@@ -74,7 +71,7 @@ func (egn *Engine) GameStartPlayInfo() (lead, declarer, dummy, suit uint8, contr
 
 	lead, declarer, dummy, suit, contract, err = egn.bidHistory.GameStartPlayInfo()
 	if err != nil {
-		slog.Warn("GameStartPlayInfo", utilog.Err(err))
+		slog.Warn("GameStartPlayInfo", slog.String(".", err.Error()))
 		return lead, declarer, dummy, suit, contract, err
 	}
 
@@ -225,15 +222,14 @@ func (egn *Engine) playResultInTrump(eastCard, southCard, westCard, northCard ui
 	}
 
 	slog.Warn("無王回合比較大小",
-		utilog.Err(errors.New(
-			fmt.Sprint(fmt.Sprintf("min:%s ~ max: %s", CbCard(playRange[0]), CbCard(playRange[1])),
-				fmt.Sprintf("首打: %s ,  東: %s 南: %s  西: %s  北: %s  , 最後誰贏:%s",
-					CbCard(first),
-					CbCard(eastCard),
-					CbCard(southCard),
-					CbCard(westCard),
-					CbCard(northCard),
-					CbSeat(winner))))))
+		slog.String(".", fmt.Sprint(fmt.Sprintf("min:%s ~ max: %s", CbCard(playRange[0]), CbCard(playRange[1])),
+			fmt.Sprintf("首打: %s ,  東: %s 南: %s  西: %s  北: %s  , 最後誰贏:%s",
+				CbCard(first),
+				CbCard(eastCard),
+				CbCard(southCard),
+				CbCard(westCard),
+				CbCard(northCard),
+				CbSeat(winner)))))
 
 	return winner
 }
@@ -308,14 +304,13 @@ func (egn *Engine) playResultInSuit(eastCard, southCard, westCard, northCard uin
 	}
 
 	slog.Warn("有王回合比較大小",
-		utilog.Err(errors.New(
-			fmt.Sprint(fmt.Sprintf("王牌範圍 %s ~ %s ", CbCard(egn.trumpRange[0]), CbCard(egn.trumpRange[1])),
-				fmt.Sprintf("東: %s 南: %s  西: %s  北: %s  , 最後誰贏:%s",
-					CbCard(eastCard),
-					CbCard(southCard),
-					CbCard(westCard),
-					CbCard(northCard),
-					CbSeat(winner))))))
+		slog.String(".", fmt.Sprint(fmt.Sprintf("王牌範圍 %s ~ %s ", CbCard(egn.trumpRange[0]), CbCard(egn.trumpRange[1])),
+			fmt.Sprintf("東: %s 南: %s  西: %s  北: %s  , 最後誰贏:%s",
+				CbCard(eastCard),
+				CbCard(southCard),
+				CbCard(westCard),
+				CbCard(northCard),
+				CbSeat(winner)))))
 	return
 }
 
@@ -330,7 +325,7 @@ func (egn *Engine) GetPlayResult(eastCard, southCard, westCard, northCard uint8,
 		winner = egn.playResultInSuit(eastCard, southCard, westCard, northCard)
 	}
 
-	slog.Warn("回合結果", utilog.Err(errors.New(fmt.Sprint("FYI", fmt.Sprintf("王牌:%s  東: %s 南: %s  西: %s  北: %s  , 最後誰贏:%s", gameSuit, CbCard(eastCard), CbCard(southCard), CbCard(westCard), CbCard(northCard), CbSeat(winner))))))
+	slog.Warn("回合結果", slog.String(".", fmt.Sprint("FYI", fmt.Sprintf("王牌:%s  東: %s 南: %s  西: %s  北: %s  , 最後誰贏:%s", gameSuit, CbCard(eastCard), CbCard(southCard), CbCard(westCard), CbCard(northCard), CbSeat(winner)))))
 
 	// winner為下一輪首打者
 	//egn.locker.Lock()

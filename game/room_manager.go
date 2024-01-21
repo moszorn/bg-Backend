@@ -16,7 +16,7 @@ import (
 	//"google.golang.org/protobuf/types/known/anypb"
 
 	"github.com/moszorn/pb"
-	utilog "github.com/moszorn/utils/log"
+	//utilog "github.com/moszorn/utils/log"
 	"github.com/moszorn/utils/rchanr"
 	"github.com/moszorn/utils/skf"
 )
@@ -195,7 +195,7 @@ func (mr *RoomManager) Start() {
 					result.err = ErrRoomFull
 				}
 				if user.Zone8 == valueNotSet {
-					slog.Error("RoomManager(Loop-EnterRoom)", utilog.Err(fmt.Errorf("%s(%d) %s 進入房間方位(%[1]s)不存在", CbSeat(user.Zone8), user.Zone8, user.Name)))
+					slog.Error("RoomManager(Loop-EnterRoom)", slog.String(".", fmt.Sprintf("%s(%d) %s 進入房間方位(%[1]s)不存在", CbSeat(user.Zone8), user.Zone8, user.Name)))
 				} else {
 					user.Ticket()
 					//房間進入者流水編號累增
@@ -222,7 +222,7 @@ func (mr *RoomManager) Start() {
 
 					}
 				} else {
-					slog.Error("RoomManager(Loop-LeaveRoom)", utilog.Err(fmt.Errorf("zone:%s(%d) %s不在房間任何zone中", CbSeat(user.Zone8), user.Zone8, user.Name)))
+					slog.Error("RoomManager(Loop-LeaveRoom)", slog.String(".", fmt.Sprintf("zone:%s(%d) %s不在房間任何zone中", CbSeat(user.Zone8), user.Zone8, user.Name)))
 				}
 
 				//為何這裡需要將設定user為nil,是因要釋放在UserLeave時的記憶體參考
@@ -516,7 +516,7 @@ func (mr *RoomManager) KickOutBrokenConnection(ns *skf.NSConn) {
 // UserJoinTableInfo 房間人數,桌中座位順序與座位狀態, 使用者進入房間時需要此資訊
 func (mr *RoomManager) UserJoinTableInfo(user *RoomUser) {
 
-	slog.Info("UserJoinTableInfo", slog.String("傳入參數", fmt.Sprintf("name:%s zone8:%s zone:%s conn:%s", user.Name, CbSeat(user.Zone8), CbSeat(user.Zone), shortConnID(user.NsConn))))
+	slog.Info("UserJoinTableInfo", slog.String("傳入參數", fmt.Sprintf("name:%s conn:%s", user.Name, shortConnID(user.NsConn))))
 
 	tqs := &tableRequest{
 		topic: _GetTableInfo,
@@ -524,7 +524,7 @@ func (mr *RoomManager) UserJoinTableInfo(user *RoomUser) {
 
 	rep := mr.table.Probe(tqs)
 	if rep.err != nil {
-		slog.Error("UserJoinTableInfo錯誤", utilog.Err(rep.err))
+		slog.Error("UserJoinTableInfo錯誤", slog.String(".", rep.err.Error()))
 	}
 
 	var pp = pb.TableInfo{
@@ -562,7 +562,7 @@ func (mr *RoomManager) UserJoinTableInfo(user *RoomUser) {
 	}
 
 	if err := mr.send(user.NsConn, ClnRoomEvents.UserPrivateTableInfo, payload); err != nil {
-		slog.Error("UserJoinTableInfo proto錯誤", utilog.Err(err))
+		slog.Error("UserJoinTableInfo proto錯誤", slog.String(".", err.Error()))
 	}
 }
 
@@ -586,7 +586,7 @@ func (mr *RoomManager) UserJoin(user *RoomUser) {
 	if response.err != nil {
 		//TODO 移除 Tracking還原
 		user.Tracking = preTracking
-		slog.Debug("使用者進入房間(UserJoin)", utilog.Err(response.err))
+		slog.Debug("使用者進入房間(UserJoin)", slog.String(".", response.err.Error()))
 		if user.NsConn != nil && !user.NsConn.Conn.IsClosed() {
 			user.NsConn.Emit(ClnRoomEvents.ErrorRoom, []byte(response.err.Error()))
 		}
@@ -632,7 +632,7 @@ func (mr *RoomManager) UserLeave(user *RoomUser) {
 	if response.err != nil {
 		//TODO 移除 Tracking還原
 		user.Tracking = preTracking
-		slog.Debug("使用者離開房間(UserLeave)", utilog.Err(response.err))
+		slog.Debug("使用者離開房間(UserLeave)", slog.String(".", response.err.Error()))
 		if user.NsConn != nil && !user.NsConn.Conn.IsClosed() {
 			user.NsConn.Emit(ClnRoomEvents.ErrorSpace, []byte(response.err.Error()))
 		}
@@ -658,10 +658,10 @@ func (mr *RoomManager) UserLeave(user *RoomUser) {
 	err := mr.SendBytes(user.NsConn, ClnRoomEvents.UserPrivateLeave, []byte(user.Name))
 	if err != nil {
 		if errors.Is(err, ErrClientBrokenOrRefresh) {
-			slog.Error("UserLeave", slog.String("發送通知訊息失敗", response.playerName), utilog.Err(err))
+			slog.Error("UserLeave", slog.String("發送通知訊息失敗", response.playerName), slog.String(".", err.Error()))
 		}
 		if errors.Is(err, ErrConn) {
-			slog.Error("UserLeave", slog.String("發送通知訊息失敗", response.playerName), utilog.Err(err))
+			slog.Error("UserLeave", slog.String("發送通知訊息失敗", response.playerName), slog.String(".", err.Error()))
 		}
 	}
 }
@@ -746,13 +746,11 @@ func (mr *RoomManager) PlayerJoin(user *RoomUser) {
 	if response.err != nil {
 		if user.NsConn != nil && !user.NsConn.Conn.IsClosed() {
 			if errors.Is(response.err, ErrUserInPlay) {
-				slog.Error("PlayerJoin",
-					utilog.Err(errors.New(fmt.Sprintf("%s 上座遊戲 %s座發生錯誤,因為使用者已在遊戲房間內", user.Name, CbSeat(user.Zone8)))))
+				slog.Error("PlayerJoin", slog.String(".", fmt.Sprintf("%s 上座遊戲 %s座發生錯誤,因為使用者已在遊戲房間內", user.Name, CbSeat(user.Zone8))))
 				user.NsConn.Emit(ClnRoomEvents.ErrorRoom, []byte("已在遊戲中"))
 			}
 			if errors.Is(response.err, ErrUserNotFound) {
-				slog.Error("PlayerJoin",
-					utilog.Err(errors.New(fmt.Sprintf("%s 上座遊戲 %s座發生錯誤,因為使用者不在遊戲房間內", user.Name, CbSeat(user.Zone8)))))
+				slog.Error("PlayerJoin", slog.String(".", fmt.Sprintf("%s 上座遊戲 %s座發生錯誤,因為使用者不在遊戲房間內", user.Name, CbSeat(user.Zone8))))
 				user.NsConn.Emit(ClnRoomEvents.ErrorRoom, []byte("尚未進入遊戲房間"))
 			}
 		}
@@ -883,7 +881,7 @@ func (mr *RoomManager) PlayerLeave(user *RoomUser) {
 	response = mr.door.Probe(user)
 
 	if response.err != nil {
-		slog.Debug("PlayerLeave", utilog.Err(response.err))
+		slog.Debug("PlayerLeave", slog.String(".", response.err.Error()))
 		if user.NsConn != nil && !user.NsConn.Conn.IsClosed() {
 			user.NsConn.Emit(ClnRoomEvents.ErrorRoom, []byte(response.err.Error()))
 			return
@@ -893,7 +891,7 @@ func (mr *RoomManager) PlayerLeave(user *RoomUser) {
 
 	// 玩家不在遊戲中
 	if response.seat == valueNotSet {
-		slog.Debug("PlayerLeave", utilog.Err(fmt.Errorf("玩家%s不在遊戲中", shortConnID(user.NsConn))))
+		slog.Debug("PlayerLeave", slog.String(".", fmt.Sprintf("玩家%s不在遊戲中", shortConnID(user.NsConn))))
 		return
 	}
 
@@ -1117,7 +1115,7 @@ func (mr *RoomManager) AcquirePlayerConnections() (e, s, w, n *skf.NSConn) {
 	response := mr.table.Probe(request)
 
 	if response.err != nil {
-		slog.Error("連取得線出錯(AcquirePlayerConnections)", utilog.Err(response.err))
+		slog.Error("連取得線出錯(AcquirePlayerConnections)", slog.String(".", response.err.Error()))
 		return
 	}
 	return response.e.NsConn, response.s.NsConn, response.w.NsConn, response.n.NsConn
@@ -1209,7 +1207,7 @@ func (mr *RoomManager) SeatShift(seat uint8) (next uint8) {
 	response := mr.table.Probe(tqs)
 
 	if response.err != nil {
-		slog.Debug("移動位置SeatShift", utilog.Err(response.err))
+		slog.Debug("移動位置SeatShift", slog.String(".", response.err.Error()))
 		return valueNotSet
 	}
 	//slog.Debug("移動位置SeatShift", slog.Bool("遊戲開始", response.isGameStart), slog.Int("回合動作", int(response.aa)))
@@ -1229,7 +1227,7 @@ func (mr *RoomManager) SendShowPlayersCardsOut() {
 
 	rep := mr.table.Probe(tqs)
 	if rep.err != nil {
-		slog.Error("發牌SendDeal錯誤", utilog.Err(rep.err))
+		slog.Error("發牌SendDeal錯誤", slog.String(".", rep.err.Error()))
 	}
 	//玩家發牌 - 順序是東,南,西,北家, 重要 所以前段順序也必須要配合
 	//rep.e.NsConn, rep.s.NsConn, rep.w.NsConn, rep.n.NsConn
@@ -1278,25 +1276,25 @@ func (mr *RoomManager) SendShowPlayersCardsOut() {
 
 	eastMarshal, err := pb.Marshal(eastPlayer)
 	if err != nil {
-		slog.Error("SendPlayersHandDeal(東)", utilog.Err(err))
+		slog.Error("SendPlayersHandDeal(東)", slog.String(".", err.Error()))
 	}
 	actions[rep.e.NsConn] = eastMarshal
 
 	southMarshal, err := pb.Marshal(southPlayer)
 	if err != nil {
-		slog.Error("SendPlayersHandDeal(南)", utilog.Err(err))
+		slog.Error("SendPlayersHandDeal(南)", slog.String(".", err.Error()))
 	}
 	actions[rep.s.NsConn] = southMarshal
 
 	westMarshal, err := pb.Marshal(westPlayer)
 	if err != nil {
-		slog.Error("SendPlayersHandDeal(西)", utilog.Err(err))
+		slog.Error("SendPlayersHandDeal(西)", slog.String(".", err.Error()))
 	}
 	actions[rep.w.NsConn] = westMarshal
 
 	northMarshal, err := pb.Marshal(northPlayer)
 	if err != nil {
-		slog.Error("SendPlayerHandDeal(北)", utilog.Err(err))
+		slog.Error("SendPlayerHandDeal(北)", slog.String(".", err.Error()))
 	}
 	actions[rep.n.NsConn] = northMarshal
 
@@ -1326,7 +1324,7 @@ func (mr *RoomManager) sendDealToPlayer( /*deckInPlay *map[uint8]*[NumOfCardsOne
 				/*(*deckInPlay)[playerSeats[idx]][:] */)
 		} else {
 			//TODO 其中有一個玩家斷線,就停止遊戲,並通知所有玩家, Player
-			slog.Error("連線(SendDeal)中斷", utilog.Err(fmt.Errorf("%s發牌連線中斷", CbSeat(playerSeats[idx]))))
+			slog.Error("連線(SendDeal)中斷", slog.String(".", fmt.Sprintf("%s發牌連線中斷", CbSeat(playerSeats[idx]))))
 		}
 	}
 }
@@ -1384,7 +1382,7 @@ func (mr *RoomManager) SendDeal( /*deckInPlay *map[uint8]*[NumOfCardsOnePlayer]u
 
 	rep := mr.table.Probe(tqs)
 	if rep.err != nil {
-		slog.Error("發牌SendDeal錯誤", utilog.Err(rep.err))
+		slog.Error("發牌SendDeal錯誤", slog.String(".", rep.err.Error()))
 	}
 
 	// *map[uint8]*[NumOfCardsOnePlayer]uint8
@@ -1449,7 +1447,7 @@ func (mr *RoomManager) sendBytesToPlayers(payload []byte, eventName string) {
 			player.EmitBinary(eventName, payload)
 		} else {
 			//TODO 其中有一個玩家斷線,就停止遊戲,並通知所有玩家, Player
-			slog.Error("連線(sendBytesToPlayers)中斷", utilog.Err(fmt.Errorf("%ssendBytesToPlayers連線中斷", CbSeat(playerSeats[idx]))))
+			slog.Error("連線(sendBytesToPlayers)中斷", slog.String(".", fmt.Sprintf("%ssendBytesToPlayers連線中斷", CbSeat(playerSeats[idx]))))
 		}
 	}
 }
@@ -1512,7 +1510,7 @@ func (mr *RoomManager) SendPayloadToPlayers(eventName string, protoMessage proto
 	}
 
 	if err != nil {
-		slog.Error("連線中斷(SendPayloadToPlayers)", utilog.Err(err))
+		slog.Error("連線中斷(SendPayloadToPlayers)", slog.String(".", err.Error()))
 		//TODO 對未斷線玩家,送出現在狀況,好讓前端popup
 		for _, nsConn := range connections {
 			// TODO 通知前端清除畫面,並告知有人斷線
@@ -1526,7 +1524,7 @@ func (mr *RoomManager) SendPayloadToPlayers(eventName string, protoMessage proto
 				}
 				if errAgain := mr.send(nsConn, ClnRoomEvents.GameAlertMessage, payload); errAgain != nil {
 					// 吞掉再一次錯誤,因為上面的錯誤會通知已經通知前端處理了
-					slog.Error("SendPayloadToPlayers", utilog.Err(errAgain))
+					slog.Error("SendPayloadToPlayers", slog.String(".", errAgain.Error()))
 				}
 			}
 		}
@@ -1541,7 +1539,7 @@ func (mr *RoomManager) SendPayloadToPlayers(eventName string, protoMessage proto
 				mr.send(player, eventName, payload)
 			} else {
 				//TODO 其中有一個玩家斷線,就停止遊戲,並通知所有玩家, Player
-				slog.Error("連線(sendToPlayers)中斷", utilog.Err(fmt.Errorf("發送事件%s", eventName)))
+				slog.Error("連線(sendToPlayers)中斷", slog.String(",", fmt.Sprintf("發送事件%s", eventName)))
 			}
 		}
 	}
@@ -1608,7 +1606,7 @@ func (mr *RoomManager) SendPayloadTo3PlayersByExclude(eventName string, protoMes
 	}
 
 	if err != nil {
-		slog.Error("連線中斷(SendPayloadTo3PlayersByExclude)", utilog.Err(err))
+		slog.Error("連線中斷(SendPayloadTo3PlayersByExclude)", slog.String(".", err.Error()))
 		//TODO 對未斷線玩家,送出現在狀況,好讓前端popup
 		for _, nsConn := range connections {
 			if nsConn != nil {
@@ -1628,12 +1626,12 @@ func (mr *RoomManager) SendPayloadTo3PlayersByExclude(eventName string, protoMes
 				}
 			} else {
 				//TODO: 斷線處理
-				slog.Warn("payload發送失敗(SendPayloadTo3PlayersByExclude)", utilog.Err(errors.New(fmt.Sprintf("座位%s %s", CbSeat(seat), err))))
+				slog.Warn("payload發送失敗(SendPayloadTo3PlayersByExclude)", slog.String(".", fmt.Sprintf("座位%s %s", CbSeat(seat), err)))
 			}
 		}
 
 		if err != nil {
-			slog.Warn("payload發送失敗(SendPayloadTo3PlayersByExclude)", utilog.Err(err))
+			slog.Warn("payload發送失敗(SendPayloadTo3PlayersByExclude)", slog.String(".", err.Error()))
 		}
 	}
 
@@ -1669,7 +1667,7 @@ func (mr *RoomManager) SendPayloadToOneAndPayloadToOthers(
 	}
 
 	if err != nil {
-		slog.Error("連線中斷(SendPayloadToOneAndPayloadToOthers)", utilog.Err(err))
+		slog.Error("連線中斷(SendPayloadToOneAndPayloadToOthers)", slog.String(".", err.Error()))
 		//TODO 對未斷線玩家,送出現在狀況,好讓前端popup
 		for _, nsConn := range connections {
 			if nsConn != nil {
@@ -1690,12 +1688,12 @@ func (mr *RoomManager) SendPayloadToOneAndPayloadToOthers(
 				}
 			} else {
 				//TODO: 斷線處理
-				slog.Warn("payload發送失敗(SendPayloadToOneAndPayloadToOthers)", utilog.Err(errors.New(fmt.Sprintf("座位%s %s", CbSeat(seat), err))))
+				slog.Warn("payload發送失敗(SendPayloadToOneAndPayloadToOthers)", slog.String(".", fmt.Sprintf("座位%s %s", CbSeat(seat), err)))
 			}
 		}
 
 		if err != nil {
-			slog.Warn("payload發送失敗(SendPayloadToOneAndPayloadToOthers)", utilog.Err(err))
+			slog.Warn("payload發送失敗(SendPayloadToOneAndPayloadToOthers)", slog.String(".", err.Error()))
 		}
 	}
 }
@@ -1739,7 +1737,7 @@ func (mr *RoomManager) SendPayloadToDefendersToAttacker(eventName string,
 	}
 
 	if err != nil {
-		slog.Error("連線中斷(SendPayloadToDefendersToAttacker)", utilog.Err(err))
+		slog.Error("連線中斷(SendPayloadToDefendersToAttacker)", slog.String(".", err.Error()))
 		//TODO 對未斷線玩家,送出現在狀況,好讓前端popup
 		for _, nsConn := range connections {
 			if nsConn != nil {
@@ -1760,12 +1758,12 @@ func (mr *RoomManager) SendPayloadToDefendersToAttacker(eventName string,
 				}
 			} else {
 				//TODO: 斷線處理
-				slog.Warn("payload發送失敗(SendPayloadToDefendersToAttacker)", utilog.Err(errors.New(fmt.Sprintf("座位%s %s", CbSeat(seat), err))))
+				slog.Warn("payload發送失敗(SendPayloadToDefendersToAttacker)", slog.String(".", fmt.Sprintf("座位%s %s", CbSeat(seat), err)))
 			}
 		}
 
 		if err != nil {
-			slog.Warn("payload發送失敗(SendPayloadToDefendersToAttacker)", utilog.Err(err))
+			slog.Warn("payload發送失敗(SendPayloadToDefendersToAttacker)", slog.String(".", err.Error()))
 		}
 	}
 }
@@ -1784,7 +1782,7 @@ func (mr *RoomManager) SendPayloadToPlayer(eventName string, payload payloadData
 	}
 
 	if !found {
-		slog.Error("SendPayloadsToPlayer", utilog.Err(fmt.Errorf("未找到%s可進行發送", name)))
+		slog.Error("SendPayloadsToPlayer", slog.String(".", fmt.Sprintf("未找到%s可進行發送", name)))
 		return nil
 	}
 	err = mr.send(conn, eventName, payload)
@@ -1831,12 +1829,12 @@ func (mr *RoomManager) SendDummyCardsByExcludeDummy(eventName string, dummyHand 
 			}
 			if conn == nil || conn.Conn.IsClosed() {
 				//DO log
-				slog.Warn("SendDummyCardsByExcludeDummy", utilog.Err(errors.New(fmt.Sprintf("%s斷線,或離開", CbSeat(seat)))))
+				slog.Warn("SendDummyCardsByExcludeDummy", slog.String(".", fmt.Sprintf("%s斷線,或離開", CbSeat(seat))))
 				continue
 			}
 			if err = mr.send(conn, eventName, payload); err != nil {
 				//DO log
-				slog.Error("SendDummyCardsByExcludeDummy", utilog.Err(err))
+				slog.Error("SendDummyCardsByExcludeDummy", slog.String(".", err.Error()))
 			}
 		}
 	}
@@ -1906,7 +1904,7 @@ func (mr *RoomManager) SendPayloadsToPlayers(eventName string, payloads ...paylo
 	}
 
 	if err != nil {
-		slog.Error("連線中斷(SendPayloadsToPlayers)", utilog.Err(err))
+		slog.Error("連線中斷(SendPayloadsToPlayers)", slog.String(".", err.Error()))
 		//TODO 對未斷線玩家,送出現在狀況,好讓前端popup
 		for _, nsConn := range connections {
 			if nsConn != nil {
@@ -1918,7 +1916,7 @@ func (mr *RoomManager) SendPayloadsToPlayers(eventName string, payloads ...paylo
 		for i := range payloads {
 			err = mr.send(connections[payloads[i].Player], eventName, payloads[i])
 			if err != nil {
-				slog.Error("payload發送失敗(SendPayloadsToPlayers)", utilog.Err(err))
+				slog.Error("payload發送失敗(SendPayloadsToPlayers)", slog.String(",", err.Error()))
 				continue
 			}
 		}
@@ -1933,7 +1931,7 @@ func (mr *RoomManager) SendPayloadsToZone(eventName string, exclude *skf.NSConn,
 	}
 	rep := mr.table.Probe(tqs)
 	if rep.err != nil {
-		slog.Error("發送訊息錯誤(SendPayloadsToZone)", utilog.Err(rep.err))
+		slog.Error("發送訊息錯誤(SendPayloadsToZone)", slog.String(".", rep.err.Error()))
 	}
 
 	var err error
@@ -1966,7 +1964,7 @@ func (mr *RoomManager) SendPayloadsToZone(eventName string, exclude *skf.NSConn,
 
 	} else {
 		if len(include) > 0 {
-			slog.Error("發送廣播SendPayloadsToZone", utilog.Err(fmt.Errorf("放送座位上玩家數量%d有問題", len(include))))
+			slog.Error("發送廣播SendPayloadsToZone", slog.String(".", fmt.Sprintf("放送座位上玩家數量%d有問題", len(include))))
 			return
 		}
 	}
@@ -1974,7 +1972,7 @@ func (mr *RoomManager) SendPayloadsToZone(eventName string, exclude *skf.NSConn,
 	for i := range connections {
 		for j := range payloads {
 			if err = mr.send(connections[i], eventName, payloads[j]); err != nil {
-				slog.Error("payload發送失敗(SendPayloadsToZone)", utilog.Err(err))
+				slog.Error("payload發送失敗(SendPayloadsToZone)", slog.String(".", err.Error()))
 			}
 		}
 	}
@@ -2118,7 +2116,7 @@ func (mr *RoomManager) BroadcastProtobuf(sender *skf.NSConn, eventName, roomName
 
 	marshal, err := pb.Marshal(body)
 	if err != nil {
-		slog.Error("ProtoMarshal(BroadcastProtobuf)", utilog.Err(err))
+		slog.Error("ProtoMarshal(BroadcastProtobuf)", slog.String(".", err.Error()))
 		return
 	}
 
@@ -2232,7 +2230,7 @@ func checkBroadcastError(probe AppErr, broadcastName string) {
 		errorSubject := fmt.Sprintf("訊息送出失敗(%s)", broadcastName)
 		switch probe.Code {
 		case BroadcastC | NSConnC:
-			slog.Error("嚴重錯誤(BroadcastChat)", utilog.Err(probe.Err))
+			slog.Error("嚴重錯誤(BroadcastChat)", slog.String(".", probe.Err.Error()))
 			fallthrough
 			//TODO log here
 		default: /*BroadcastC*/

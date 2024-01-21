@@ -25,7 +25,7 @@ type (
 
 type (
 	Game struct { // 玩家進入房間, 玩家進入遊戲,玩家離開房間,玩家離開遊戲
-
+		log      *utilog.MyLog
 		Shutdown context.CancelFunc
 
 		//計數入房間的人數,由UserCounter而設定
@@ -77,11 +77,12 @@ type (
 )
 
 // CreateCBGame 建立橋牌(Contract Bridge) Game
-func CreateCBGame(pid context.Context, counter UserCounter, tableName string, tableId int32) *Game {
+func CreateCBGame(log *utilog.MyLog, pid context.Context, counter UserCounter, tableName string, tableId int32) *Game {
 
 	ctx, cancelFunc := context.WithCancel(pid)
 
 	g := &Game{
+		log:         log,
 		CounterAdd:  counter.RoomAdd,
 		CounterSub:  counter.RoomSub,
 		Shutdown:    cancelFunc,
@@ -224,7 +225,7 @@ func (g *Game) GamePrivateNotyBid(currentBidder *RoomUser) {
 	//一被點擊,就停止四家正在執行的gauge
 	err := g.roomManager.SendPayloadToPlayers(ClnRoomEvents.GameOP, &pb.OP{Type: pb.SceneType_game_gauge_stop}, pb.SceneType_game)
 	if err != nil {
-		slog.Warn("斷線", utilog.Err(err))
+		g.log.Wrn(fmt.Sprintf("斷線:%s", err.Error()))
 	}
 
 	nextLimitBidding, db1, db2 := g.engine.GetNextBid(currentBidder.Zone8, currentBidder.Bid8)
@@ -324,7 +325,7 @@ func (g *Game) GamePrivateNotyBid(currentBidder *RoomUser) {
 			//if err := g.roomManager.SendPayloadToPlayers(ClnRoomEvents.GameNotyBid, payload, pb.SceneType_game); err != nil {
 			if err := g.roomManager.SendPayloadToPlayers(ClnRoomEvents.GameNotyBid, &notyBid, pb.SceneType_game); err != nil {
 				//TODO 清空當前該遊戲桌在Server上的狀態
-				slog.Info("GamePrivateNotyBid[重新洗牌,重新競叫]", utilog.Err(err))
+				g.log.Dbg("GamePrivateNotyBid[重新洗牌,重新競叫錯誤]", slog.String(".", err.Error()))
 				g.engine.ClearBiddingState()
 			}
 
@@ -341,21 +342,12 @@ func (g *Game) GamePrivateNotyBid(currentBidder *RoomUser) {
 
 			if err != nil {
 				if errors.Is(err, ErrUnContract) {
-					slog.Error("GamePrivateNotyBid[競叫完成,遊戲開始]", slog.String("FYI", fmt.Sprintf("合約有問題,只能在合約確定才能呼叫GameStartPlayInfo,%s", utilog.Err(err))))
+					g.log.Wrn("GamePrivateNotyBid[競叫完成,遊戲開始]錯誤", slog.String(".", fmt.Sprintf("合約有問題,只能在合約確定才能呼叫GameStartPlayInfo,%s", err.Error())))
 					//TODO 紀錄 log
 					return
 				}
 			}
 			g.engine.ClearBiddingState()
-
-			slog.Debug("競叫後引擎參數(After)", utilog.Err(errors.New(
-				fmt.Sprintf("莊: %s  夢: %s  當前玩家: %s (136:尚未設定), 王牌範圍: %s  ~ %s ",
-					g.engine.declarer,
-					g.engine.dummy,
-					CbSeat(g.engine.currentPlay),
-					CbCard(g.engine.trumpRange[0]),
-					CbCard(g.engine.trumpRange[1]),
-				))))
 
 			// 向前端發送清除Bidding UI, 並停止(terminate)四家gauge
 			var clearScene = pb.OP{
@@ -627,12 +619,12 @@ func (g *Game) AvailablePlayerPlayRange(player uint8, isRoundStart bool) (minimu
 func (g *Game) GamePrivateCardHover(cardAction *cb.CardAction) error {
 
 	if !cardAction.IsHoverTriggerByDeclarer {
-		slog.Error("GamePrivateCardHover", utilog.Err(errors.New(fmt.Sprintf("觸發者應該是莊(%s)但觸發是 %s", g.Declarer, CbSeat(cardAction.Seat)))))
+		g.log.Wrn("GamePrivateCardHover", slog.String(".", fmt.Sprintf("觸發者應該是莊(%s)但觸發是 %s", g.Declarer, CbSeat(cardAction.Seat))))
 		return nil
 	}
 
 	if cardAction.Type == cb.CardAction_play {
-		slog.Error("GamePrivateCardHover", utilog.Err(errors.New(fmt.Sprintf(" %s  型態應該是hover/out但傳入型態是Play", CbCard(cardAction.CardValue)))))
+		g.log.Wrn("GamePrivateCardHover", slog.String(".", fmt.Sprintf(" %s  型態應該是hover/out但傳入型態是Play", CbCard(cardAction.CardValue))))
 		return nil
 	}
 	//server trigger by pass 回前端夢家
@@ -694,7 +686,7 @@ func (g *Game) GamePrivateCardPlayClick(clickPlayer *RoomUser) error {
 	//一被點擊,就停止四家正在執行的gauge
 	err := g.roomManager.SendPayloadToPlayers(ClnRoomEvents.GameOP, &pb.OP{Type: pb.SceneType_game_gauge_stop}, pb.SceneType_game)
 	if err != nil {
-		slog.Warn("斷線", utilog.Err(err))
+		g.log.Wrn("斷線", slog.String(".", err.Error()))
 	}
 
 	//第一張出牌必須執行限定回合出牌範圍,否則底下求得可出牌範圍(AvailablePlayerPlayRange)會無效

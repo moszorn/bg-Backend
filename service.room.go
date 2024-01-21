@@ -15,6 +15,7 @@ import (
 	"project/game"
 )
 
+/*
 func NewRoomSpaceService(pid context.Context, rooms *map[string]*game.Game, counter CounterService) AllRoom {
 	if len(*rooms) == 0 {
 		panic("key不存在")
@@ -23,6 +24,19 @@ func NewRoomSpaceService(pid context.Context, rooms *map[string]*game.Game, coun
 	var roomIdSeq int32 = 1
 	for roomName := range *rooms {
 		(*rooms)[roomName] = game.CreateCBGame(pid, counter, roomName, roomIdSeq)
+		roomIdSeq++
+	}
+	return *rooms
+}*/
+
+func NewRoomSpaceService(pid context.Context, rooms *map[string]*game.Game, counter CounterService, lg *utilog.MyLog) AllRoom {
+	if len(*rooms) == 0 {
+		panic("key不存在")
+	}
+
+	var roomIdSeq int32 = 1
+	for roomName := range *rooms {
+		(*rooms)[roomName] = game.CreateCBGame(lg, pid, counter, roomName, roomIdSeq)
 		roomIdSeq++
 	}
 	return *rooms
@@ -49,7 +63,7 @@ func (rooms AllRoom) enterProcess(ns *skf.NSConn, m skf.Message) (g *game.Game, 
 	defer func() {
 		if e := recover().(error); e != nil {
 			if errors.Is(e, proto.Error) {
-				slog.Error("proto嚴重錯誤", utilog.Err(err))
+				slog.Error("proto嚴重錯誤", slog.String(".", err.Error()))
 				//TODO
 				err = e
 			}
@@ -67,7 +81,7 @@ func (rooms AllRoom) enterProcess(ns *skf.NSConn, m skf.Message) (g *game.Game, 
 	//這個Recover 主要在防止 uint8(uint32)轉型爆掉
 	defer func() {
 		if fatal := recover().(error); fatal != nil {
-			slog.Error("嚴重錯誤", slog.String("FYI", fmt.Sprintf("name:name:%s/zone:%d/Bid:%d/Play:%d \n%s", PB.Name, PB.Zone, PB.Bid, PB.Play, utilog.Err(fatal))))
+			slog.Error("嚴重錯誤", slog.String("FYI", fmt.Sprintf("name:name:%s/zone:%d/Bid:%d/Play:%d \n%s", PB.Name, PB.Zone, PB.Bid, PB.Play, fatal.Error())))
 			//TODO
 			err = errors.New("王八蛋不要亂搞")
 		}
@@ -215,7 +229,7 @@ func (rooms AllRoom) GamePrivateCardHover(ns *skf.NSConn, m skf.Message) error {
 	//取出 pb.CardAction
 	defer func() {
 		if e := recover(); e != nil {
-			slog.Error("proto嚴重錯誤(hover/hover out)", utilog.Err(e.(error)))
+			slog.Error("proto嚴重錯誤(hover/hover out)", slog.Any(".", e.(error)))
 		}
 	}()
 
@@ -229,7 +243,7 @@ func (rooms AllRoom) GamePrivateCardHover(ns *skf.NSConn, m skf.Message) error {
 	if err != nil {
 		var be *BackendErr
 		if errors.As(err, &be) {
-			slog.Error("房間錯誤", utilog.Err(err))
+			slog.Error("房間錯誤", slog.String(".", err.Error()))
 		}
 	}
 
@@ -280,7 +294,7 @@ func (rooms AllRoom) callBackStoreConnectionRole(ns *skf.NSConn, m skf.Message) 
 	slog.Warn("前端設定callBackStoreConnectionRole")
 	if len(m.Body) == 0 {
 		err := errors.New("連線store儲存game role,無參數,設定值是空值")
-		slog.Error("前端設定callBackStoreConnectionRole", utilog.Err(err))
+		slog.Error("前端設定callBackStoreConnectionRole", slog.String(".", err.Error()))
 		panic(err)
 	}
 	slog.Warn("前端設定callBackStoreConnectionRole", slog.Any("store", m.Body[0]))

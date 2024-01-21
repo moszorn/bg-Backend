@@ -7,7 +7,6 @@ import (
 	"sync"
 
 	"github.com/moszorn/pb"
-	utilog "github.com/moszorn/utils/log"
 )
 
 type (
@@ -278,13 +277,13 @@ func (mgr *SeatManager) seatPlay(playSeat, playValue uint8) (roundCompleted bool
 
 	if mgr.aa >= 4 {
 		err := errors.New("已滿四人出牌,無法設定seat value")
-		slog.Error("seatPlay", utilog.Err(err))
+		slog.Error("seatPlay", slog.String(".", err.Error()))
 	}
 
 	//step1 設定seat value(card)
 	if !mgr.setSeatValue(playSeat, playValue) {
 		err := errors.New("設定座位出牌出錯!!")
-		slog.Error("seatPlay", utilog.Err(err))
+		slog.Error("seatPlay", slog.String(".", err.Error()))
 	}
 
 	//step2. 出牌計數 +1 累計
