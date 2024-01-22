@@ -99,7 +99,7 @@ func initNamespace(pid context.Context) {
 		tables[cbGameRooms[idx]] = nil
 	}
 
-	mylog := llg.NewMyLog("app.log", slog.LevelDebug, llg.ConsoleLog)
+	mylog := llg.NewMyLog("app.log", slog.LevelDebug, llg.FileLog)
 
 	counterService = NewCounterService(&tables)
 
