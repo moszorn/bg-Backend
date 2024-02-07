@@ -31,7 +31,7 @@ const (
 
 const (
 	// GamePlayCountDown 遊戲中,玩家叫/出牌時間, 未來(從DB撈取)依附在RoomUser中
-	GamePlayCountDown uint32 = 15
+	GamePlayCountDown uint32 = 5
 )
 
 type SeatStatusAndGameStart uint8
@@ -149,7 +149,7 @@ const (
 //新局開叫
 //zeroBid uint8 = 0x0
 
-// enum CbBid  ♣️♦️♥️♠️ ♛  ✘   ✗✘✓✔︎
+/* ⛌ ⛌
 const (
 	BidYet CbBid = iota // CbBid未設定,初始叫品表示開叫時叫品的值
 	Pass1               //1線✔︎
@@ -158,56 +158,117 @@ const (
 	H1                  //1線♥️
 	S1                  //1線♠️
 	NT1                 //1線♛
-	Db1                 //1線✘
-	Db1x2               //1線✗✘
+	Db1                 //1線⛌
+	Db1x2               //1線✗⛌
 	Pass2               //2線✔︎
 	C2                  //2線♣️
 	D2                  //2線♦️
 	H2                  //2線♥️
 	S2                  //2線♠️
 	NT2                 //2線♛
-	Db2                 //2線✘
-	Db2x2               //2線✗✘
+	Db2                 //2線⛌
+	Db2x2               //2線✗⛌
 	Pass3               //3線✔︎
 	C3                  //3線♣️
 	D3                  //3線♦️
 	H3                  //3線♥️
 	S3                  //3線♠️
 	NT3                 //3線♛
-	Db3                 //3線✘
-	Db3x2               //3線✗✘
+	Db3                 //3線⛌
+	Db3x2               //3線✗⛌
 	Pass4               //4線✔︎
 	C4                  //4線♣️
 	D4                  //4線♦️
 	H4                  //4線♥️
 	S4                  //4線♠️
 	NT4                 //4線♛
-	Db4                 //4線✘
-	Db4x2               //4線✗✘
+	Db4                 //4線⛌
+	Db4x2               //4線✗⛌
 	Pass5               //5線✔︎
 	C5                  //5線♣️
 	D5                  //5線♦️
 	H5                  //5線♥️
 	S5                  //5線♠️
 	NT5                 //5線♛
-	Db5                 //5線✘
-	Db5x2               //5線✗✘
+	Db5                 //5線⛌
+	Db5x2               //5線✗⛌
 	Pass6               //6線✔︎
 	C6                  //6線♣️
 	D6                  //6線♦️
 	H6                  //6線♥️
 	S6                  //6線♠️
 	NT6                 //6線♛
-	Db6                 //6線✘
-	Db6x2               //6線✗✘
+	Db6                 //6線⛌
+	Db6x2               //6線✗⛌
 	Pass7               //7線✔︎
 	C7                  //7線♣️
 	D7                  //7線♦️
 	H7                  //7線♥️
 	S7                  //7線♠️
 	NT7                 //7線♛
-	Db7                 //7線✘
-	Db7x2               //7線✗✘
+	Db7                 //7線⛌
+	Db7x2               //7線✗⛌
+)*/
+
+// enum CbBid  ♣️♦️♥️♠️ ♛  ⛌   ✗⛌✓✔︎
+const (
+	BidYet CbBid = iota // CbBid未設定,初始叫品表示開叫時叫品的值
+	Pass1               //1 Pass
+	C1                  //1♣️
+	D1                  //1♦️
+	H1                  //1♥️
+	S1                  //1♠️
+	NT1                 // 1NT
+	Db1                 //1⛌
+	Db1x2               //1⛌⛌
+	Pass2               //2Pass
+	C2                  //2♣️
+	D2                  //2♦️
+	H2                  //2♥️
+	S2                  //2♠️
+	NT2                 // 2NT
+	Db2                 //2⛌
+	Db2x2               //2⛌⛌
+	Pass3               //3Pass
+	C3                  //3♣️
+	D3                  //3♦️
+	H3                  //3♥️
+	S3                  //3♠️
+	NT3                 // 3NT
+	Db3                 //3⛌
+	Db3x2               //3⛌⛌
+	Pass4               //4Pass
+	C4                  //4♣️
+	D4                  //4♦️
+	H4                  //4♥️
+	S4                  //4♠️
+	NT4                 // 4NT
+	Db4                 //4⛌
+	Db4x2               //4⛌⛌
+	Pass5               //5Pass
+	C5                  //5♣️
+	D5                  //5♦️
+	H5                  //5♥️
+	S5                  //5♠️
+	NT5                 // 5NT
+	Db5                 //5⛌
+	Db5x2               //5⛌⛌
+	Pass6               //6Pass
+	C6                  //6♣️
+	D6                  //6♦️
+	H6                  //6♥️
+	S6                  //6♠️
+	NT6                 // 6NT
+	Db6                 //6⛌
+	Db6x2               //6⛌⛌
+	Pass7               //7Pass
+	C7                  //7♣️
+	D7                  //7♦️
+	H7                  //7♥️
+	S7                  //7♠️
+	NT7                 // 7NT
+	Db7                 //7⛌
+	Db7x2               //7⛌⛌
 )
 
 var (

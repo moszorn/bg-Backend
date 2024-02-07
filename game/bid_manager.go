@@ -16,6 +16,7 @@ type (
 		t      time.Time // 前端叫約時間,此屬性用以找尋先叫合約的人
 		bidder CbSeat    // 競叫者
 		value  CbBid     // 叫品(不帶位置)
+		line   uint8     //叫品線位
 
 		dbType CbSuit //叫品屬於哪類Double(只限DOUBLE, REDOUBLE,預設值ZeroSuit表未設定)
 		b      uint8  //CbSeat | CbBid
@@ -26,6 +27,27 @@ type (
 		histories map[uint8]time.Time // 競叫者(CbSeat)與所叫王牌花色(Suit)聯合為KEY, Value是競叫者叫約時間(即bidItem.t)
 	}
 )
+
+// 以CbBid得知線位
+func biddingLine(cbBid CbBid) uint8 {
+	switch {
+	case cbBid >= Pass1 && cbBid <= Db1x2:
+		return uint8(1)
+	case cbBid >= Pass2 && cbBid <= Db2x2:
+		return uint8(2)
+	case cbBid >= Pass3 && cbBid <= Db3x2:
+		return uint8(3)
+	case cbBid >= Pass4 && cbBid <= Db4x2:
+		return uint8(4)
+	case cbBid >= Pass5 && cbBid <= Db5x2:
+		return uint8(5)
+	case cbBid >= Pass6 && cbBid <= Db6x2:
+		return uint8(6)
+	case cbBid >= Pass7 && cbBid <= Db7x2:
+		return uint8(7)
+	}
+	return uint8(0)
+}
 
 func createBidItem(seat, bid uint8) *bidItem {
 
@@ -44,6 +66,10 @@ func createBidItem(seat, bid uint8) *bidItem {
 	default:
 		b.dbType = ZeroSuit
 	}
+
+	//設定線位
+	b.line = biddingLine(b.value)
+
 	return b
 }
 

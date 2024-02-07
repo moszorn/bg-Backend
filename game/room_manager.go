@@ -807,21 +807,21 @@ func (mr *RoomManager) PlayerJoin(user *RoomUser) {
 
 	if response.isOnSeat && response.isGameStart {
 		// g.start會洗牌,亂數取得開叫者,及禁叫品項, bidder首叫會是亂數取的
-		bidder, zero := mr.SendGameStart()
-		slog.Info("PlayerJoin之競叫開始", slog.String("加入遊戲者", user.Name), slog.String("首叫者", fmt.Sprintf("%s", CbSeat(bidder))), slog.String("初始叫品", fmt.Sprintf("%s", CbBid(zero))))
+		mr.SendGameStart()
 	}
-
 }
 
-func (mr *RoomManager) SendGameStart() (lead, bid uint8) {
+func (mr *RoomManager) SendGameStart() {
 
 	//通知(private)個人玩家Player上座了
 	payload := payloadData{
 		PayloadType: ProtobufType,
 	}
 
-	// 首引, 以及初始叫品(ZeroBid)
-	lead, bid = mr.g.start()
+	// 首引, 以及初始叫品(uint8(BidYet)) BidYet CbBid = iota = 0
+	lead := mr.g.start()
+
+	initZeroBid := uint8(BidYet)
 
 	mr.g.SeatShift(lead)
 
@@ -834,6 +834,7 @@ func (mr *RoomManager) SendGameStart() (lead, bid uint8) {
 	// 注意 需要分別發送給桌面上的玩家通知 GamePrivateNotyBid
 	//個人開叫提示, 前端 必須處理
 	//TODO : 確認禁叫品就是當前最新的叫品,前端(label.dart-setBidTable)可以方便處理
+	//BidOrder 第一次開叫時設定前端競叫版歷史紀錄表
 	//lead 表示下一個開叫牌者 前端(Player,觀眾席)必須處理
 	//禁叫品項,因為是首叫所以禁止叫品是 重要 zeroBid競叫開始
 	//第三個參數:上一個叫牌者(ValueNotSet)
@@ -844,8 +845,11 @@ func (mr *RoomManager) SendGameStart() (lead, bid uint8) {
 	//第八個參數: 一線ReDouble 開啟 (0:表示disable)
 	//   參考: GamePrivateNotyBid
 	notyBid := cb.NotyBid{
+		BidOrder: &cb.BidOrder{
+			Headers: mr.g.GetBidOrder(),
+		},
 		Bidder:   uint32(lead),
-		BidStart: uint32(bid),
+		BidStart: uint32(initZeroBid),
 		//LastBidder: uint32(valueNotSet),
 		Double1: uint32(Db1),
 		Double2: uint32(Db2),

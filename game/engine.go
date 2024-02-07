@@ -25,6 +25,7 @@ type Engine struct {
 	//locker sync.RWMutex
 
 	bidHistory *bidHistory
+	bidOrder   *[4]uint32
 
 	//底下三個在競叫底定,遊戲開始前 SetGamePlayInfo 設定
 	trumpRange CardRange //王張區間,首引
@@ -40,6 +41,7 @@ func newEngine() *Engine {
 
 	egn := &Engine{
 		bidHistory:  createBidHistory(),
+		bidOrder:    &[4]uint32{uint32(valueNotSet)},
 		trumpRange:  CardRange{},
 		declarer:    seatYet,
 		dummy:       seatYet,
@@ -88,19 +90,45 @@ func (egn *Engine) IsBidFinishedOrReBid() (bidComplete bool, needReBid bool) {
 	return egn.bidHistory.IsBidFinishedOrReBid()
 }
 
-// StartBid 初始競叫開始
-func (egn *Engine) StartBid() (nextBidder uint8, limitBiddingValue uint8) {
+// StartBid 初始競叫開始, 設定遊戲開叫順位(bidOrder),回傳首叫與開叫訊號(bidValueLimit)
+func (egn *Engine) StartBid() (nextBidder uint8) {
+
 	// 重要  叫品首開叫, 重要: 前端以zeroBid來判斷是不是首叫開始
-	//return randomSeat(), zeroBid
-	return uint8(east), uint8(BidYet)
+	nextBidder = randomSeat()
+
+	//重要 競叫歷史紀錄設定 - 首叫
+	egn.bidOrder[0] = uint32(nextBidder)
+
+	//重要: 設定該局叫牌順序
+	switch nextBidder {
+	case playerSeats[0]:
+		egn.bidOrder[1] = uint32(playerSeats[1])
+		egn.bidOrder[2] = uint32(playerSeats[2])
+		egn.bidOrder[3] = uint32(playerSeats[3])
+	case playerSeats[1]:
+		egn.bidOrder[1] = uint32(playerSeats[2])
+		egn.bidOrder[2] = uint32(playerSeats[3])
+		egn.bidOrder[3] = uint32(playerSeats[0])
+	case playerSeats[2]:
+		egn.bidOrder[1] = uint32(playerSeats[3])
+		egn.bidOrder[2] = uint32(playerSeats[0])
+		egn.bidOrder[3] = uint32(playerSeats[1])
+	case playerSeats[3]:
+		egn.bidOrder[1] = uint32(playerSeats[0])
+		egn.bidOrder[2] = uint32(playerSeats[1])
+		egn.bidOrder[3] = uint32(playerSeats[2])
+	}
+	return
 }
 
-func (egn *Engine) GetNextBid(seat, bid uint8) (nextBiddingLimit uint8, db DoubleButton, db2 DoubleButton) {
+func (egn *Engine) GetNextBid(seat, bid uint8) (history []*bidItem, nextBiddingLimit uint8, db DoubleButton, db2 DoubleButton) {
+
 	bidding := egn.bidHistory.Bid(seat, bid)
 
 	nextBiddingLimit = egn.bidHistory.LastBid()
 	db = DoubleButton{}
 	db2 = DoubleButton{}
+	history = egn.bidHistory.h
 
 	if !bidding.isCrucial() {
 		//PASS跳過
@@ -120,6 +148,7 @@ func (egn *Engine) GetNextBid(seat, bid uint8) (nextBiddingLimit uint8, db Doubl
 			db.isOn = true
 		}
 	}
+
 	/*
 		slog.Debug("GetNextBid",
 			slog.String(fmt.Sprintf("%s", bidding.bidder), fmt.Sprintf(" %s ", bidding.value)),
@@ -138,32 +167,9 @@ func (egn *Engine) playOrder(eastCard, southCard, westCard, northCard uint8) (fi
 	//egn.locker.RLock()
 	//defer egn.locker.RUnlock()
 
-	/*	switch CbSeat(egn.currentPlay) {
-		case east:
-			firstPlay = eastCard
-			flowerPlays[0] = southCard
-			flowerPlays[1] = westCard
-			flowerPlays[2] = northCard
-		case south:
-			firstPlay = southCard
-			flowerPlays[0] = eastCard
-			flowerPlays[1] = westCard
-			flowerPlays[2] = northCard
-		case west:
-			firstPlay = westCard
-			flowerPlays[0] = southCard
-			flowerPlays[1] = eastCard
-			flowerPlays[2] = northCard
-		case north:
-			firstPlay = northCard
-			flowerPlays[0] = southCard
-			flowerPlays[1] = westCard
-			flowerPlays[2] = eastCard
-		}
-	*/
-
 	switch CbSeat(egn.currentPlay) {
 	case east:
+		/* y後一位出牌(egn.currentPlay)若是 east, 桌面逆時針往前算第一個出牌會是南,依序會是西,北,東(egn.currentPlay)*/
 		firstPlay = southCard
 		flowerPlays[0] = westCard
 		flowerPlays[1] = northCard

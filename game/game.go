@@ -137,14 +137,18 @@ func (g *Game) SeatShift(seat uint8) (nextSeat uint8) {
 	return g.roomManager.SeatShift(seat)
 }
 
-// start 開始遊戲,這個method會進行洗牌, bidder競叫者,zeroBidding競叫初始值
-func (g *Game) start() (currentPlayer, zeroBidding uint8) {
+// start 開始遊戲,這個method會進行洗牌,並引擎記錄該局叫牌順序, bidder競叫者,zeroBidding競叫初始值
+func (g *Game) start() (currentPlayer uint8) {
 	//洗牌
 	Shuffle(g)
 
-	// limitBiddingValue 必定是 zeroBid ,因此 重要 前端必須判斷開叫是否是首叫狀態
-	currentPlayer, zeroBidding = g.engine.StartBid()
-	return
+	return g.engine.StartBid()
+}
+
+// GetBidOrder 執行GetBidOrder,必須是遊戲第一次開叫之後,也就是 engine的 StartBid已經被呼叫之後
+func (g *Game) GetBidOrder() (order []uint32) {
+	//從 array[4] 轉成 array
+	return (*g.engine.bidOrder)[:]
 }
 
 func (g *Game) KickOutBrokenConnection(ns *skf.NSConn) {
@@ -210,6 +214,59 @@ func (g *Game) SetGamePlayInfo(declarer, dummy, firstLead, kingSuit uint8) {
 	}
 }
 
+func bidHistoryItemsToProto(items []*bidItem) *cb.BidHistoryBoard {
+
+	fmt.Printf("bidHistoryToProto there are have %d bid item \n", len(items))
+
+	//Pass, Db叫品
+	var byPassLineindicator = func(b CbBid, line uint8) uint32 {
+		switch b {
+		case Pass1, Pass2, Pass3, Pass4, Pass5, Pass6, Pass7, Db1, Db2, Db3, Db4, Db5, Db6, Db7, Db1x2, Db2x2, Db3x2, Db4x2, Db5x2, Db6x2, Db7x2:
+			//前端看到是0必須略不顯示線位
+			return uint32(0)
+		default:
+			return uint32(line)
+		}
+	}
+
+	board := &cb.BidHistoryBoard{
+		Rows: make(map[uint32]*cb.BidHistoryItems),
+	}
+
+	var (
+		line uint32 = 0
+		idx  uint32 = 0
+		suit string
+	)
+
+	board.Rows[line] = &cb.BidHistoryItems{
+		Columns: make([]*cb.BidHistoryItem, 0, 4),
+	}
+
+	for i := range items {
+
+		idx = uint32(i)
+
+		// 一個row有四個 column
+		if (len(board.Rows[line].Columns)+1)%5 == 0 {
+			if idx > uint32(0) {
+				line = line + 1
+			}
+			board.Rows[line] = &cb.BidHistoryItems{
+				Columns: make([]*cb.BidHistoryItem, 0, 4),
+			}
+		}
+
+		suit = fmt.Sprintf("%s", items[idx].value)
+
+		board.Rows[line].Columns = append(board.Rows[line].Columns, &cb.BidHistoryItem{
+			Line:       byPassLineindicator(items[idx].value, items[idx].line),
+			SuitString: suit[1:],
+		})
+	}
+	return board
+}
+
 /*
 	//移動環形,並校準座位
 	nextPlayer := g.SeatShift(currentPlayer)
@@ -228,7 +285,7 @@ func (g *Game) GamePrivateNotyBid(currentBidder *RoomUser) {
 		g.log.Wrn(fmt.Sprintf("斷線:%s", err.Error()))
 	}
 
-	nextLimitBidding, db1, db2 := g.engine.GetNextBid(currentBidder.Zone8, currentBidder.Bid8)
+	bidHistories, nextLimitBidding, db1, db2 := g.engine.GetNextBid(currentBidder.Zone8, currentBidder.Bid8)
 
 	complete, needReBid := g.engine.IsBidFinishedOrReBid()
 
@@ -242,12 +299,15 @@ func (g *Game) GamePrivateNotyBid(currentBidder *RoomUser) {
 		//叫牌開始,開始設定這局Engine位置
 		g.setEnginePlayer(next)
 
+		//TODO: 轉換bidhistoy 到 proto
+
 		//第一個參數: 表示下一個開叫牌者 前端(Player,觀眾席)必須處理
 		//第二個參數: 禁叫品項,因為是首叫所以禁止叫品是 重要 zeroBid 前端(Player,觀眾席)必須處理
 		//第三個參數: 上一個叫牌者
 		//第四個參數: 上一次叫品
 
 		notyBid := cb.NotyBid{
+			BidItems:       bidHistoryItemsToProto(bidHistories),
 			Bidder:         uint32(next),
 			BidStart:       uint32(nextLimitBidding),
 			LastBidderName: fmt.Sprintf("%s-%s", CbSeat(currentBidder.Zone8), currentBidder.Name),
@@ -257,6 +317,18 @@ func (g *Game) GamePrivateNotyBid(currentBidder *RoomUser) {
 			Btn:            0,
 		}
 
+		//------底下測試叫牌公告, 可以刪除 -------------
+		line := uint32(len(notyBid.BidItems.Rows))
+		var column []*cb.BidHistoryItem
+		for i := uint32(0); i < line; i++ {
+			fmt.Printf("===== column %d =====\n", line)
+			column = notyBid.BidItems.Rows[i].Columns
+			for j := range column {
+				fmt.Printf("  line:%d %s\n", column[j].Line, column[j].SuitString)
+			}
+		}
+		fmt.Println()
+		//-------------------
 		switch true {
 		case db1.isOn:
 			notyBid.Btn = cb.NotyBid_db
@@ -287,7 +359,7 @@ func (g *Game) GamePrivateNotyBid(currentBidder *RoomUser) {
 		case true: //重新洗牌,重新競叫
 
 			//清除叫牌紀錄
-			// moszorn 重要: 一並清除 bidHistory
+			// moszorn 重要: 一並清除 bidHistories
 			g.engine.ClearBiddingState()
 
 			//四家攤牌
@@ -297,8 +369,7 @@ func (g *Game) GamePrivateNotyBid(currentBidder *RoomUser) {
 			time.Sleep(time.Second * 3)
 
 			// StartOpenBid會更換新一局,因此玩家順序也做了更動
-			bidder, _ := g.start()
-
+			bidder := g.start()
 			g.SeatShift(bidder)
 			g.setEnginePlayer(bidder)
 
@@ -311,6 +382,9 @@ func (g *Game) GamePrivateNotyBid(currentBidder *RoomUser) {
 			*/
 
 			notyBid := cb.NotyBid{
+				BidOrder: &cb.BidOrder{
+					Headers: g.GetBidOrder(),
+				},
 				Bidder:   uint32(bidder),
 				BidStart: uint32(valueNotSet), /* 坑:重新競叫前端使用ValueNotSet重新叫訊號*/
 				//LastBidderName: fmt.Sprintf("%s-%s", CbSeat(currentBidder.Zone8), currentBidder.Name),
