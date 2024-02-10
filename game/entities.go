@@ -31,7 +31,7 @@ const (
 
 const (
 	// GamePlayCountDown 遊戲中,玩家叫/出牌時間, 未來(從DB撈取)依附在RoomUser中
-	GamePlayCountDown uint32 = 20
+	GamePlayCountDown uint32 = 2
 )
 
 type SeatStatusAndGameStart uint8
