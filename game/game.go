@@ -317,18 +317,6 @@ func (g *Game) GamePrivateNotyBid(currentBidder *RoomUser) {
 			Btn:            0,
 		}
 
-		//------底下測試叫牌公告, 可以刪除 -------------
-		line := uint32(len(notyBid.BidItems.Rows))
-		var column []*cb.BidHistoryItem
-		for i := uint32(0); i < line; i++ {
-			fmt.Printf("===== column %d =====\n", line)
-			column = notyBid.BidItems.Rows[i].Columns
-			for j := range column {
-				fmt.Printf("  line:%d %s\n", column[j].Line, column[j].SuitString)
-			}
-		}
-		fmt.Println()
-		//-------------------
 		switch true {
 		case db1.isOn:
 			notyBid.Btn = cb.NotyBid_db
@@ -362,24 +350,10 @@ func (g *Game) GamePrivateNotyBid(currentBidder *RoomUser) {
 			// moszorn 重要: 一並清除 bidHistories
 			g.engine.ClearBiddingState()
 
-			//四家攤牌
-			g.roomManager.SendShowPlayersCardsOut()
-
-			//三秒後重新發新牌
-			time.Sleep(time.Second * 3)
-
 			// StartOpenBid會更換新一局,因此玩家順序也做了更動
 			bidder := g.start()
 			g.SeatShift(bidder)
 			g.setEnginePlayer(bidder)
-
-			//重發牌
-			g.roomManager.SendDeal()
-
-			/*TODO 修改:
-			1)送出Public (GameNotyBid)
-			2)送出Private (GamePrivateNotyBid)..................................................
-			*/
 
 			notyBid := cb.NotyBid{
 				BidOrder: &cb.BidOrder{
@@ -403,12 +377,24 @@ func (g *Game) GamePrivateNotyBid(currentBidder *RoomUser) {
 				g.engine.ClearBiddingState()
 			}
 
-			time.Sleep(time.Millisecond * 400)
-			//Private 指定傳送給 bidder 開叫
+			time.Sleep(time.Second * 1)
+			g.roomManager.SendShowPlayersCardsOut() //四家攤牌
+
+			time.Sleep(time.Second * 3) //三秒後重新發新牌
+			g.roomManager.SendDeal()    //重發牌
+
 			payload.Player = bidder
-			g.roomManager.SendPayloadToPlayer(ClnRoomEvents.GamePrivateNotyBid, payload) //私人Private
+			g.roomManager.SendPayloadToPlayer(ClnRoomEvents.GamePrivateNotyBid, payload) //Private 指定傳送給 bidder 開叫
 
 		case false: //競叫完成,遊戲開始
+
+			//這裡開始, 補上最後一個NotyBid(最後一個PASS)
+			const MaxUint32 = ^uint32(0) // 4294967295
+			notyBid := cb.NotyBid{
+				BidStart: MaxUint32, //代表最後的Pass叫
+			}
+			g.roomManager.SendPayloadToPlayers(ClnRoomEvents.GameNotyBid, &notyBid, pb.SceneType_game) //廣播補上最後競叫的PASS
+			//-------------------------------------------------
 
 			lead, declarer, dummy, suit, finallyBidding, err := g.engine.GameStartPlayInfo()
 
@@ -423,7 +409,7 @@ func (g *Game) GamePrivateNotyBid(currentBidder *RoomUser) {
 			}
 			g.engine.ClearBiddingState()
 
-			// 向前端發送清除Bidding UI, 並停止(terminate)四家gauge
+			// 向前端發送清除Bidding UI, 並停止(terminate)四家gauge, 並補上競叫歷史紀錄最後一個PASS
 			var clearScene = pb.OP{
 				Type:     pb.SceneType_game_clear_scene,
 				RealSeat: uint32(currentBidder.Zone8),
