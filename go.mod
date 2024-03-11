@@ -10,8 +10,8 @@ require (
 	github.com/kataras/neffos v0.0.22 // indirect
 	github.com/lmittmann/tint v1.0.2 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
-	github.com/moszorn/pb v0.0.0-20240207050151-16d9954da3fb // indirect
+	github.com/moszorn/pb v0.0.0-20240309162732-ef35b97ab220 // indirect
 	github.com/moszorn/utils v0.0.0-20240121150744-db0c1c34b6c2 // indirect
 	golang.org/x/sys v0.6.0 // indirect
-	google.golang.org/protobuf v1.32.0 // indirect
+	google.golang.org/protobuf v1.33.0 // indirect
 )
