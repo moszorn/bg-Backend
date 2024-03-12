@@ -179,6 +179,10 @@ func (g *Game) UserJoinTableInfo(user *RoomUser) {
 	go g.roomManager.UserJoinTableInfo(user)
 }
 
+func (g *Game) Chat(user *RoomUser) {
+	g.roomManager.BroadcastProtobuf(user.NsConn, ClnRoomEvents.TableOnChat, g.name, user.Chat)
+}
+
 //====================================================================================
 //====================================================================================
 //====================================================================================

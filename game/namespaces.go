@@ -37,6 +37,7 @@ type (
 
 		TablePrivateOnLeave string `json:"tablePrivateOnLeave,omitempty"` //Done (私人)
 		TableOnLeave        string `json:"tableOnLeave,omitempty"`        //Done (廣播)
+		TableOnChat         string `json:"tableOnChat,omitempty"`         //Done (廣播)
 
 		Private string `json:"private,omitempty"` //Done
 		//遊戲開始發牌事件(clientEvent Only)
@@ -130,6 +131,7 @@ var (
 		UserPrivateLeave:    "upl",  //Done
 		TablePrivateOnLeave: "tpol", //Done
 		TablePrivateOnSeat:  "tpos", //Done
+		TableOnChat:         "toc",  //Done
 
 		GamePrivateNotyBid:       "gpnb",
 		GamePrivateFirstLead:     "gpfl",
@@ -152,6 +154,7 @@ var (
 		TablePrivateOnLeave:  "tpol", //Done
 		TableOnSeat:          "tos",  //Done
 		TablePrivateOnSeat:   "tpos", //Done
+		TableOnChat:          "toc",  //Done
 
 		Private:            "private", // Done
 		GamePrivateDeal:    "gpd",     //Done
