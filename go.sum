@@ -106,6 +106,8 @@ github.com/moszorn/pb v0.0.0-20240307155358-66ffcab1a595 h1:6OCKCD44mfvdqECtHAOL
 github.com/moszorn/pb v0.0.0-20240307155358-66ffcab1a595/go.mod h1:P0tumgGCxzHGlultc5Nijq4OOQeekNyfZP7yTeP5tcg=
 github.com/moszorn/pb v0.0.0-20240309162732-ef35b97ab220 h1:Bl27dcQrqPmf/KwiTbD5VeEihtbwDJVUXUl4Iv+s6hI=
 github.com/moszorn/pb v0.0.0-20240309162732-ef35b97ab220/go.mod h1:P0tumgGCxzHGlultc5Nijq4OOQeekNyfZP7yTeP5tcg=
+github.com/moszorn/pb v0.0.0-20240312112202-7026807382e7 h1:Ao4F+eAos6cceLJHdzXU6nwUD5HSuN7BhfxoNeP5gKg=
+github.com/moszorn/pb v0.0.0-20240312112202-7026807382e7/go.mod h1:P0tumgGCxzHGlultc5Nijq4OOQeekNyfZP7yTeP5tcg=
 github.com/moszorn/utils v0.0.0-20231124040113-e3ee6027390f h1:oX9mmjlMlGV+ZRBMzq5+EGVzxu48zB3O5Tg/sVkuVi8=
 github.com/moszorn/utils v0.0.0-20231124040113-e3ee6027390f/go.mod h1:2UUcEk1rjwMuyjxEOI6QnzuaHp+IYgAwbUWzBHsvHs4=
 github.com/moszorn/utils v0.0.0-20240120040806-25edc8ccba3f h1:E0fuatQrhw4l6dxZqBdiOVtItDefDeg6iDMwfo8E/sU=
