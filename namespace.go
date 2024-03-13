@@ -54,7 +54,6 @@ type (
 		UserLeave(*skf.NSConn, skf.Message) error
 		PlayerJoin(*skf.NSConn, skf.Message) error
 		PlayerLeave(*skf.NSConn, skf.Message) error
-		Chat(*skf.NSConn, skf.Message) error
 
 		GamePrivateNotyBid(*skf.NSConn, skf.Message) error
 		GamePrivateCardPlayClick(*skf.NSConn, skf.Message) error
@@ -141,7 +140,6 @@ func newSpaceManager(rooms RoomService, lobby LobbyService) SpaceManager {
 		game.SrvRoomEvents.UserPrivateLeave:    rooms.UserLeave,
 		game.SrvRoomEvents.TablePrivateOnSeat:  rooms.PlayerJoin,
 		game.SrvRoomEvents.TablePrivateOnLeave: rooms.PlayerLeave,
-		game.SrvRoomEvents.TableOnChat:         rooms.Chat,
 
 		game.SrvRoomEvents.GamePrivateNotyBid:       rooms.GamePrivateNotyBid,
 		game.SrvRoomEvents.GamePrivateFirstLead:     rooms.GamePrivateFirstLead,

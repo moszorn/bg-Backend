@@ -253,24 +253,6 @@ func (rooms AllRoom) GamePrivateCardHover(ns *skf.NSConn, m skf.Message) error {
 	return nil
 }
 
-func (rooms AllRoom) Chat(ns *skf.NSConn, m skf.Message) error {
-	g, u, er := rooms.enterProcess(ns, m)
-	if er != nil {
-		var err *BackendErr
-		if errors.As(er, &err) {
-			slog.Error("聊天錯誤", slog.String("msg", err.Error()), slog.String("room", m.Room), slog.String("zone", fmt.Sprintf("%s", game.CbSeat(u.Zone8))))
-		}
-		return er
-	}
-	//g.PlayerLeave(u)
-	slog.Info("入口(Chat)",
-		slog.String("FYI",
-			fmt.Sprintf("%s(%s) 打出 %s  isChatTag:%t Tag:%s msg:%s  ", u.Name, game.CbSeat(u.Zone8), game.CbSeat(u.PlaySeat8), u.Chat.IsTag, u.Chat.TagPlayerName, u.Chat.Msg)))
-
-	go g.Chat(u)
-	return nil
-}
-
 /*
 
 
