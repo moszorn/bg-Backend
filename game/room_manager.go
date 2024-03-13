@@ -746,12 +746,12 @@ func (mr *RoomManager) PlayerJoin(user *RoomUser) {
 	if response.err != nil {
 		if user.NsConn != nil && !user.NsConn.Conn.IsClosed() {
 			if errors.Is(response.err, ErrUserInPlay) {
-				slog.Error("PlayerJoin", slog.String(".", fmt.Sprintf("%s 上座遊戲 %s座發生錯誤,因為使用者已在遊戲房間內", user.Name, CbSeat(user.Zone8))))
-				user.NsConn.Emit(ClnRoomEvents.ErrorRoom, []byte("已在遊戲中"))
+				slog.Error("PlayerJoin", slog.String(".", fmt.Sprintf("%s 上座遊戲 %s座發生錯誤,%s , 或因為使用者已在遊戲房間內", user.Name, CbSeat(user.Zone8), response.err)))
+				//user.NsConn.Emit(ClnRoomEvents.ErrorRoom, []byte("已在遊戲中"))
 			}
 			if errors.Is(response.err, ErrUserNotFound) {
-				slog.Error("PlayerJoin", slog.String(".", fmt.Sprintf("%s 上座遊戲 %s座發生錯誤,因為使用者不在遊戲房間內", user.Name, CbSeat(user.Zone8))))
-				user.NsConn.Emit(ClnRoomEvents.ErrorRoom, []byte("尚未進入遊戲房間"))
+				slog.Error("PlayerJoin", slog.String(".", fmt.Sprintf("%s 上座遊戲 %s座發生錯誤, %s , 或因為使用者不在遊戲房間內", user.Name, CbSeat(user.Zone8), response.err)))
+				//user.NsConn.Emit(ClnRoomEvents.ErrorRoom, []byte("尚未進入遊戲房間"))
 			}
 		}
 		return
