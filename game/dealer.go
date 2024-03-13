@@ -105,8 +105,6 @@ func NewDeck(g *Game) {
 		for i := 0; i < len(uint8s); i++ {
 			cards = append(cards, fmt.Sprintf("%s", CbCard(uint8s[i])))
 		}
-		slog.Debug("NewDeck初始牌分配",
-			slog.String("座位", fmt.Sprintf("%s", CbSeat(playerSeats[idx]))),
-			slog.String("牌", strings.Join(cards, "  ")))
+		//slog.Debug("NewDeck初始牌分配", slog.String("座位", fmt.Sprintf("%s", CbSeat(playerSeats[idx]))), slog.String("牌", strings.Join(cards, "  ")))
 	}
 }

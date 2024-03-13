@@ -606,8 +606,7 @@ func (mr *RoomManager) UserJoin(user *RoomUser) {
 
 	err := mr.SendBytes(user.NsConn, ClnRoomEvents.UserPrivateJoin, []byte(user.Name))
 	if err != nil {
-		//panic(err)
-		slog.Debug("使用者進入房間(UserJoin)", slog.String(".", response.err.Error()))
+		panic(err)
 	}
 	//TODO: 將當時房間狀態送出給進入者 (想法: Game必須一併傳入當時桌面情況進來,因為room_manager只管發送與廣播)
 }
@@ -918,9 +917,8 @@ func (mr *RoomManager) PlayerLeave(user *RoomUser) {
 
 	//TBC 因為Client可能不正常離線(離桌)所以可能已經失去連線,所以在此不需要再送訊號通知做私人通知
 	//mr.SendBytes(user.NsConn, ClnRoomEvents.TablePrivateOnLeave, nil)
-	//清除叫牌紀錄
 	// moszorn 重要: 一並清除 bidHistories
-	// 重要: TODO 3-13 moszorn 底下清除bidHistory 可能造成Data racing 參考: game.go - KickOutBrokenConnection 也有同樣的問題
+	// 重要 TODO: 3-13 moszorn 底下清除bidHistory 可能造成Data racing 參考: game.go - KickOutBrokenConnection 也有同樣的問題
 	mr.g.engine.ClearBiddingState()
 
 	//發送其它三位玩家清空桌面(因為有人離桌)
