@@ -273,13 +273,14 @@ func (mr *RoomManager) Start() {
 					}
 				}
 
-				if !allowEnterGame {
-					//進入者尚未進入房間中
-					result.err = ErrUserNotFound
-					//返回
-					tracking.Response <- result
-					continue
-				}
+				/*
+					if !allowEnterGame {
+						//進入者尚未進入房間中
+						result.err = ErrUserNotFound
+						//返回
+						tracking.Response <- result
+						continue
+					}*/
 
 				// 未來 檢查進入者是否已在其站上其它房間遊戲中 (by Dynamodb)
 				//result.err = ErrPlayMultipleGame //同時多局遊戲
