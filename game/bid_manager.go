@@ -23,7 +23,7 @@ type (
 	}
 
 	bidHistory struct {
-		h         []*bidItem          // 競叫紀錄
+		h         []*bidItem          // 競叫紀錄(每一個叫牌過程)
 		histories map[uint8]time.Time // 競叫者(CbSeat)與所叫王牌花色(Suit)聯合為KEY, Value是競叫者叫約時間(即bidItem.t)
 	}
 )

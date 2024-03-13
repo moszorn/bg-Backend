@@ -152,6 +152,11 @@ func (g *Game) GetBidOrder() (order []uint32) {
 }
 
 func (g *Game) KickOutBrokenConnection(ns *skf.NSConn) {
+	//清除叫牌紀錄
+	// moszorn 重要: 一並清除 bidHistories
+	//3-13 moszorn 重要 TODO: 底下會造成 bidhistory data racing , 參考 room_manager.go - PlayerLeave也有同樣的問題
+	g.engine.ClearBiddingState()
+
 	go g.roomManager.KickOutBrokenConnection(ns)
 }
 
