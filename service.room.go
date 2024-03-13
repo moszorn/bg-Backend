@@ -236,7 +236,8 @@ func (rooms AllRoom) GamePrivateCardHover(ns *skf.NSConn, m skf.Message) error {
 	cardAction := &cb.CardAction{}
 	err = pb.Unmarshal(m.Body, cardAction)
 	if err != nil {
-		panic(err)
+		//panic(err)
+		slog.Debug("GamePrivateCardHover", slog.String(".", err.Error()))
 	}
 
 	g, err = rooms.room(m.Room)
@@ -313,7 +314,7 @@ func (rooms AllRoom) callBackStoreConnectionRole(ns *skf.NSConn, m skf.Message) 
 	if len(m.Body) == 0 {
 		err := errors.New("連線store儲存game role,無參數,設定值是空值")
 		slog.Error("前端設定callBackStoreConnectionRole", slog.String(".", err.Error()))
-		panic(err)
+		//panic(err)
 	}
 	slog.Warn("前端設定callBackStoreConnectionRole", slog.Any("store", m.Body[0]))
 
@@ -342,7 +343,9 @@ func (rooms AllRoom) _OnNamespaceDisconnect(c *skf.NSConn, m skf.Message) error 
 	var err error
 	err = c.LeaveAll(ctx)
 	if err != nil {
-		panic(err)
+		//panic(err)
+		slog.Debug("_OnNamespaceDisconnect", slog.String(".", err.Error()))
+
 	}
 	return nil
 }

@@ -502,7 +502,7 @@ func (g *Game) GamePrivateFirstLead(leadPlayer *RoomUser) error {
 	if firstPlayHitting != uint32(1) {
 		//TODO: 記log或回復錯誤
 		slog.Warn("首引出牌點擊數錯誤", slog.Int("點擊數應為1,但收到", int(leadPlayer.NumOfCardPlayHitting)))
-		panic("首引點數錯誤")
+		//panic("首引點數錯誤")
 	}
 
 	var (
@@ -749,7 +749,7 @@ func (g *Game) GamePrivateCardPlayClick(clickPlayer *RoomUser) error {
 	// hitting=> 0(表示四人已經牌以打出), 1(表示1人出牌), 2(表示2人出牌), 3(表示三人出牌)
 	if cardPlayHitting < uint32(0) || cardPlayHitting > uint32(3) {
 		slog.Warn("出牌點擊問題", slog.String("FYI", fmt.Sprintf("出牌點擊數至少要大於2且小於4,實際為%d", cardPlayHitting)))
-		panic("出牌點擊問題")
+		//panic("出牌點擊問題")
 	}
 
 	//一被點擊,就停止四家正在執行的gauge
@@ -985,7 +985,7 @@ func (g *Game) GamePrivateCardPlayClick(clickPlayer *RoomUser) error {
 			err := g.roomManager.SendPayloadToPlayers(ClnRoomEvents.GameOP, &pb.OP{Type: pb.SceneType_game_round_clear}, pb.SceneType_game)
 			if err != nil {
 				//TODO: log goes here這裡絕不能出錯
-				panic(err)
+				//panic(err)
 				//廣播有人GG
 			}
 
