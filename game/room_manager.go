@@ -273,14 +273,13 @@ func (mr *RoomManager) Start() {
 					}
 				}
 
-				/*
-					if !allowEnterGame {
-						//進入者尚未進入房間中
-						result.err = ErrUserNotFound
-						//返回
-						tracking.Response <- result
-						continue
-					}*/
+				if !allowEnterGame {
+					//進入者尚未進入房間中
+					result.err = ErrUserNotFound
+					//返回
+					tracking.Response <- result
+					continue
+				}
 
 				// 未來 檢查進入者是否已在其站上其它房間遊戲中 (by Dynamodb)
 				//result.err = ErrPlayMultipleGame //同時多局遊戲
@@ -747,12 +746,12 @@ func (mr *RoomManager) PlayerJoin(user *RoomUser) {
 	if response.err != nil {
 		if user.NsConn != nil && !user.NsConn.Conn.IsClosed() {
 			if errors.Is(response.err, ErrUserInPlay) {
-				slog.Error("PlayerJoin", slog.String(".", fmt.Sprintf("%s 上座遊戲 %s座發生錯誤,%s , 或因為使用者已在遊戲房間內", user.Name, CbSeat(user.Zone8), response.err)))
-				//user.NsConn.Emit(ClnRoomEvents.ErrorRoom, []byte("已在遊戲中"))
+				slog.Error("PlayerJoin", slog.String(".", fmt.Sprintf("%s 上座遊戲 %s座發生錯誤,因為使用者已在遊戲房間內", user.Name, CbSeat(user.Zone8))))
+				user.NsConn.Emit(ClnRoomEvents.ErrorRoom, []byte("已在遊戲中"))
 			}
 			if errors.Is(response.err, ErrUserNotFound) {
-				slog.Error("PlayerJoin", slog.String(".", fmt.Sprintf("%s 上座遊戲 %s座發生錯誤, %s , 或因為使用者不在遊戲房間內", user.Name, CbSeat(user.Zone8), response.err)))
-				//user.NsConn.Emit(ClnRoomEvents.ErrorRoom, []byte("尚未進入遊戲房間"))
+				slog.Error("PlayerJoin", slog.String(".", fmt.Sprintf("%s 上座遊戲 %s座發生錯誤,因為使用者不在遊戲房間內", user.Name, CbSeat(user.Zone8))))
+				user.NsConn.Emit(ClnRoomEvents.ErrorRoom, []byte("尚未進入遊戲房間"))
 			}
 		}
 		return
@@ -918,9 +917,6 @@ func (mr *RoomManager) PlayerLeave(user *RoomUser) {
 
 	//TBC 因為Client可能不正常離線(離桌)所以可能已經失去連線,所以在此不需要再送訊號通知做私人通知
 	//mr.SendBytes(user.NsConn, ClnRoomEvents.TablePrivateOnLeave, nil)
-	// moszorn 重要: 一並清除 bidHistories
-	// 重要 TODO: 3-13 moszorn 底下清除bidHistory 可能造成Data racing 參考: game.go - KickOutBrokenConnection 也有同樣的問題
-	mr.g.engine.ClearBiddingState()
 
 	//發送其它三位玩家清空桌面(因為有人離桌)
 	//mr.SendPayloadToPlayers(ClnRoomEvents.TablePrivateOnLeave, payload, response.alives[:]) //response.alives[:]轉換array成為slice

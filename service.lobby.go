@@ -8,7 +8,6 @@ import (
 	"github.com/moszorn/pb"
 	"github.com/moszorn/pb/cb"
 	"github.com/moszorn/utils/skf"
-
 	"project/game"
 )
 
@@ -115,8 +114,7 @@ func (app *BridgeGameLobby) _OnNamespaceConnected(c *skf.NSConn, m skf.Message) 
 
 	marshal, err := pb.Marshal(&l)
 	if err != nil {
-		//panic(err)
-		slog.Debug("_OnNamespaceConnected", slog.String(".", err.Error()))
+		panic(err)
 	}
 
 	// 坑: 透過 c.EmitBinary 前端想要讀出,必須參考 message.d.dart C A T C H  FORMAT:294
@@ -134,8 +132,7 @@ func (app *BridgeGameLobby) _OnNamespaceDisconnect(c *skf.NSConn, m skf.Message)
 	var err error
 	err = c.LeaveAll(ctx)
 	if err != nil {
-		//panic(err)
-		slog.Debug("_OnNamespaceDisconnect", slog.String(".", err.Error()))
+		panic(err)
 	}
 
 	return nil
