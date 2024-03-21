@@ -238,7 +238,9 @@ func (mr *RoomManager) Start() {
 				result := chanResult{}
 
 				//檢查 --------------------
-				audiences, ePlayer, sPlayer, wPlayer, nPlayer := mr.zoneUsers()
+				//audiences, ePlayer, sPlayer, wPlayer, nPlayer := mr.zoneUsers()
+				//TBC: 因為現在沒觀眾,所以不需要 第一個參數
+				_, ePlayer, sPlayer, wPlayer, nPlayer := mr.zoneUsers()
 
 				// 檢查進入者是否已在遊戲中,有=> 回復錯誤
 				switch user.NsConn {
@@ -260,9 +262,10 @@ func (mr *RoomManager) Start() {
 					continue
 				}
 
-				//判斷自房間否
-				allowEnterGame = false
+				//判斷在房間否,TBC 暫時忽略觀眾
+				allowEnterGame = true //TBC: 因為現在沒觀眾,所以不需要判斷 allowEnterGame
 				//檢查進入者有否在桌中,不在桌中=>回復錯誤
+				/* TBC: 同上因為現在沒觀眾,所以不需要判斷 allowEnterGame
 				for i := range audiences {
 					if !audiences[i].NsConn.Conn.IsClosed() &&
 						audiences[i].Name == user.Name &&
@@ -271,7 +274,7 @@ func (mr *RoomManager) Start() {
 						//進入者已經在房間在房間
 						allowEnterGame = true
 					}
-				}
+				}*/
 
 				if !allowEnterGame {
 					//進入者尚未進入房間中
