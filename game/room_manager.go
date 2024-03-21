@@ -606,7 +606,7 @@ func (mr *RoomManager) UserJoin(user *RoomUser) {
 
 	err := mr.SendBytes(user.NsConn, ClnRoomEvents.UserPrivateJoin, []byte(user.Name))
 	if err != nil {
-		panic(err)
+		slog.Error("UserJoin", slog.String("發送通知訊息失敗", response.playerName), slog.String(".", err.Error()))
 	}
 	//TODO: 將當時房間狀態送出給進入者 (想法: Game必須一併傳入當時桌面情況進來,因為room_manager只管發送與廣播)
 }

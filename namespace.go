@@ -77,7 +77,15 @@ func (spaceHandlers SpaceManager) spaceHandler(spaceName string) map[string]skf.
 
 var (
 	//未來 房間名稱改撈db
-	cbGameRooms = []string{"room0x0", "room0x1"}
+	cbGameRooms = []string{
+		"room0x0", "room0x1", "room0x2", "room0x3", "room0x4", "room0x5", "room0x6", "room0x7",
+		"room1x0", "room1x1", "room1x2", "room1x3", "room1x4", "room1x5", "room1x6", "room1x7",
+		"room2x0", "room2x1", "room2x2", "room2x3", "room2x4", "room2x5", "room2x6", "room2x7",
+		"room3x0", "room3x1", "room3x2", "room3x3", "room3x4", "room3x5", "room3x6", "room3x7",
+		"room4x0", "room3x1", "room4x2", "room4x3", "room4x4", "room4x5", "room4x6", "room4x7",
+		"room5x0", "room5x1", "room5x2", "room5x3", "room5x4", "room5x5", "room5x6", "room5x7",
+		"room6x0", "room6x1", "room6x2", "room6x3", "room6x4", "room6x5", "room6x6", "room6x7",
+	}
 
 	counterService    CounterService // 計數
 	roomSpaceService  RoomService    // 房間
